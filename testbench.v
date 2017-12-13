@@ -51,7 +51,7 @@ module testbench #(
 		end
 	end
 
-	picorv32_wrapper #(
+	picodevice_wrapper #(
 		.AXI_TEST (AXI_TEST),
 		.VERBOSE  (VERBOSE)
 	) top (
@@ -64,7 +64,7 @@ module testbench #(
 endmodule
 `endif
 
-module picorv32_wrapper #(
+module picodevice_wrapper #(
 	parameter AXI_TEST = 0,
 	parameter VERBOSE = 0
 ) (
@@ -75,13 +75,13 @@ module picorv32_wrapper #(
 	output [35:0] trace_data
 );
 	wire tests_passed;
-	reg [31:0] irq;
+	//reg [31:0] irq;
 
-	always @* begin
-		irq = 0;
-		irq[4] = &uut.picorv32_core.count_cycle[12:0];
-		irq[5] = &uut.picorv32_core.count_cycle[15:0];
-	end
+	//always @* begin
+	//	irq = 0;
+	//	irq[4] = &uut.picorv32_core.count_cycle[12:0];
+	//	irq[5] = &uut.picorv32_core.count_cycle[15:0];
+	//end
 
 	wire        mem_axi_awvalid;
 	wire        mem_axi_awready;
@@ -135,41 +135,8 @@ module picorv32_wrapper #(
 		.tests_passed    (tests_passed    )
 	);
 
-`ifdef RISCV_FORMAL
-	wire        rvfi_valid;
-	wire [63:0] rvfi_order;
-	wire [31:0] rvfi_insn;
-	wire        rvfi_trap;
-	wire        rvfi_halt;
-	wire        rvfi_intr;
-	wire [4:0]  rvfi_rs1_addr;
-	wire [4:0]  rvfi_rs2_addr;
-	wire [31:0] rvfi_rs1_rdata;
-	wire [31:0] rvfi_rs2_rdata;
-	wire [4:0]  rvfi_rd_addr;
-	wire [31:0] rvfi_rd_wdata;
-	wire [31:0] rvfi_pc_rdata;
-	wire [31:0] rvfi_pc_wdata;
-	wire [31:0] rvfi_mem_addr;
-	wire [3:0]  rvfi_mem_rmask;
-	wire [3:0]  rvfi_mem_wmask;
-	wire [31:0] rvfi_mem_rdata;
-	wire [31:0] rvfi_mem_wdata;
-`endif
-
-	picorv32_axi #(
-`ifndef SYNTH_TEST
-`ifdef SP_TEST
-		.ENABLE_REGS_DUALPORT(0),
-`endif
-`ifdef COMPRESSED_ISA
-		.COMPRESSED_ISA(1),
-`endif
-		.ENABLE_MUL(1),
-		.ENABLE_DIV(1),
-		.ENABLE_IRQ(1),
+	picodevice #(
 		.ENABLE_TRACE(1)
-`endif
 	) uut (
 		.clk            (clk            ),
 		.resetn         (resetn         ),
@@ -191,57 +158,9 @@ module picorv32_wrapper #(
 		.mem_axi_rvalid (mem_axi_rvalid ),
 		.mem_axi_rready (mem_axi_rready ),
 		.mem_axi_rdata  (mem_axi_rdata  ),
-		.irq            (irq            ),
-`ifdef RISCV_FORMAL
-		.rvfi_valid     (rvfi_valid     ),
-		.rvfi_order     (rvfi_order     ),
-		.rvfi_insn      (rvfi_insn      ),
-		.rvfi_trap      (rvfi_trap      ),
-		.rvfi_halt      (rvfi_halt      ),
-		.rvfi_intr      (rvfi_intr      ),
-		.rvfi_rs1_addr  (rvfi_rs1_addr  ),
-		.rvfi_rs2_addr  (rvfi_rs2_addr  ),
-		.rvfi_rs1_rdata (rvfi_rs1_rdata ),
-		.rvfi_rs2_rdata (rvfi_rs2_rdata ),
-		.rvfi_rd_addr   (rvfi_rd_addr   ),
-		.rvfi_rd_wdata  (rvfi_rd_wdata  ),
-		.rvfi_pc_rdata  (rvfi_pc_rdata  ),
-		.rvfi_pc_wdata  (rvfi_pc_wdata  ),
-		.rvfi_mem_addr  (rvfi_mem_addr  ),
-		.rvfi_mem_rmask (rvfi_mem_rmask ),
-		.rvfi_mem_wmask (rvfi_mem_wmask ),
-		.rvfi_mem_rdata (rvfi_mem_rdata ),
-		.rvfi_mem_wdata (rvfi_mem_wdata ),
-`endif
 		.trace_valid    (trace_valid    ),
 		.trace_data     (trace_data     )
 	);
-
-`ifdef RISCV_FORMAL
-	picorv32_rvfimon rvfi_monitor (
-		.clock          (clk           ),
-		.reset          (!resetn       ),
-		.rvfi_valid     (rvfi_valid    ),
-		.rvfi_order     (rvfi_order    ),
-		.rvfi_insn      (rvfi_insn     ),
-		.rvfi_trap      (rvfi_trap     ),
-		.rvfi_halt      (rvfi_halt     ),
-		.rvfi_intr      (rvfi_intr     ),
-		.rvfi_rs1_addr  (rvfi_rs1_addr ),
-		.rvfi_rs2_addr  (rvfi_rs2_addr ),
-		.rvfi_rs1_rdata (rvfi_rs1_rdata),
-		.rvfi_rs2_rdata (rvfi_rs2_rdata),
-		.rvfi_rd_addr   (rvfi_rd_addr  ),
-		.rvfi_rd_wdata  (rvfi_rd_wdata ),
-		.rvfi_pc_rdata  (rvfi_pc_rdata ),
-		.rvfi_pc_wdata  (rvfi_pc_wdata ),
-		.rvfi_mem_addr  (rvfi_mem_addr ),
-		.rvfi_mem_rmask (rvfi_mem_rmask),
-		.rvfi_mem_wmask (rvfi_mem_wmask),
-		.rvfi_mem_rdata (rvfi_mem_rdata),
-		.rvfi_mem_wdata (rvfi_mem_wdata)
-	);
-`endif
 
 	reg [1023:0] firmware_file;
 	initial begin
@@ -375,6 +294,12 @@ module axi4_memory #(
 			mem_axi_rdata <= memory[latched_raddr >> 2];
 			mem_axi_rvalid <= 1;
 			latched_raddr_en = 0;
+        end else
+        if (latched_raddr == 32'hE000_102C) begin
+            // query UART status register
+            mem_axi_rdata <= 0;
+            mem_axi_rvalid <= 1;
+            latched_raddr_en = 0;
 		end else begin
 			$display("OUT-OF-BOUNDS MEMORY READ FROM %08x", latched_raddr);
 			$finish;
@@ -390,7 +315,14 @@ module axi4_memory #(
 			if (latched_wstrb[2]) memory[latched_waddr >> 2][23:16] <= latched_wdata[23:16];
 			if (latched_wstrb[3]) memory[latched_waddr >> 2][31:24] <= latched_wdata[31:24];
 		end else
-		if (latched_waddr == 32'h1000_0000) begin
+        if (latched_waddr == 32'h0000_1000) begin
+            if (latched_wdata == 123456789)
+                tests_passed = 1;
+        end else
+        if (latched_waddr == 32'h0000_1004) begin
+            $display("REPORTED TIMER COUNT: %1d", latched_wdata);
+        end else
+		if (latched_waddr == 32'hE000_1030) begin
 			if (verbose) begin
 				if (32 <= latched_wdata && latched_wdata < 128)
 					$display("OUT: '%c'", latched_wdata[7:0]);
@@ -402,10 +334,6 @@ module axi4_memory #(
 				$fflush();
 `endif
 			end
-		end else
-		if (latched_waddr == 32'h2000_0000) begin
-			if (latched_wdata == 123456789)
-				tests_passed = 1;
 		end else begin
 			$display("OUT-OF-BOUNDS MEMORY WRITE TO %08x", latched_waddr);
 			$finish;
