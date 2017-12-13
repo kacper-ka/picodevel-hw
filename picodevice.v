@@ -47,31 +47,31 @@ module picodevice #(
 	// Trace Interface
 	output        trace_valid,
 	output [35:0] trace_data
-)
-    localparam [ 0:0] ENABLE_COUNTERS = 1,
-	localparam [ 0:0] ENABLE_COUNTERS64 = 1,
-	localparam [ 0:0] ENABLE_REGS_16_31 = 1,
-	localparam [ 0:0] ENABLE_REGS_DUALPORT = 1,
-	localparam [ 0:0] TWO_STAGE_SHIFT = 1,
-	localparam [ 0:0] BARREL_SHIFTER = 0,
-	localparam [ 0:0] TWO_CYCLE_COMPARE = 0,
-	localparam [ 0:0] TWO_CYCLE_ALU = 0,
-	localparam [ 0:0] COMPRESSED_ISA = 0,
-	localparam [ 0:0] CATCH_MISALIGN = 1,
-	localparam [ 0:0] CATCH_ILLINSN = 1,
-	localparam [ 0:0] ENABLE_PCPI = 0,
-	localparam [ 0:0] ENABLE_MUL = 0,
-	localparam [ 0:0] ENABLE_FAST_MUL = 0,
-	localparam [ 0:0] ENABLE_DIV = 0,
-	localparam [ 0:0] ENABLE_IRQ = 0,
-	localparam [ 0:0] ENABLE_IRQ_QREGS = 1,
-	localparam [ 0:0] ENABLE_IRQ_TIMER = 1,
-	localparam [ 0:0] REGS_INIT_ZERO = 0,
-	localparam [31:0] MASKED_IRQ = 32'h 0000_0000,
-	localparam [31:0] LATCHED_IRQ = 32'h ffff_ffff,
-	localparam [31:0] PROGADDR_RESET = 32'h 0000_0000,
-	localparam [31:0] PROGADDR_IRQ = 32'h 0000_0010,
-	localparam [31:0] STACKADDR = 32'h ffff_ffff
+);
+    localparam [ 0:0] ENABLE_COUNTERS = 1;
+	localparam [ 0:0] ENABLE_COUNTERS64 = 1;
+	localparam [ 0:0] ENABLE_REGS_16_31 = 1;
+	localparam [ 0:0] ENABLE_REGS_DUALPORT = 1;
+	localparam [ 0:0] TWO_STAGE_SHIFT = 1;
+	localparam [ 0:0] BARREL_SHIFTER = 0;
+	localparam [ 0:0] TWO_CYCLE_COMPARE = 0;
+	localparam [ 0:0] TWO_CYCLE_ALU = 0;
+	localparam [ 0:0] COMPRESSED_ISA = 0;
+	localparam [ 0:0] CATCH_MISALIGN = 1;
+	localparam [ 0:0] CATCH_ILLINSN = 1;
+	localparam [ 0:0] ENABLE_PCPI = 0;
+	localparam [ 0:0] ENABLE_MUL = 0;
+	localparam [ 0:0] ENABLE_FAST_MUL = 0;
+	localparam [ 0:0] ENABLE_DIV = 0;
+	localparam [ 0:0] ENABLE_IRQ = 0;
+	localparam [ 0:0] ENABLE_IRQ_QREGS = 1;
+	localparam [ 0:0] ENABLE_IRQ_TIMER = 1;
+	localparam [ 0:0] REGS_INIT_ZERO = 0;
+	localparam [31:0] MASKED_IRQ = 32'h 0000_0000;
+	localparam [31:0] LATCHED_IRQ = 32'h ffff_ffff;
+	localparam [31:0] PROGADDR_RESET = 32'h 0000_0000;
+	localparam [31:0] PROGADDR_IRQ = 32'h 0000_0010;
+	localparam [31:0] STACKADDR = 32'h ffff_ffff;
 
     
     /* Exact picorv32_axi internals (for now) */
