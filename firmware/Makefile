@@ -61,7 +61,7 @@ $(OBJ_DIR)/testbench/start.o: testbench/start.S | $(OBJ_DIRS)
 	$(TOOLCHAIN_PREFIX)gcc -c -march=rv32im -o $@ $<
 
 $(OBJ_DIR)/testbench/%.o: testbench/%.c | $(OBJ_DIRS)
-	$(TOOLCHAIN_PREFIX)gcc -c -march=rv32im -Os --std=c99 -Wall -Wextra -pedantic \
+	$(TOOLCHAIN_PREFIX)gcc -c -march=rv32i -Os --std=c99 -Wall -Wextra -pedantic \
 		-ffreestanding -nostdlib -o $@ $<
 
 $(OBJ_DIR)/$(TEST_DIR)/%.o: $(TEST_DIR)/%.S $(TEST_DIR)/riscv_test.h $(TEST_DIR)/test_macros.h | $(OBJ_DIRS)
