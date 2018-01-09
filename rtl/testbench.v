@@ -51,7 +51,7 @@ module testbench #(
 		end
 	end
 
-	picodevice_wrapper #(
+	picodevice_tb_wrapper #(
 		.AXI_TEST (AXI_TEST),
 		.VERBOSE  (VERBOSE)
 	) top (
@@ -64,7 +64,7 @@ module testbench #(
 endmodule
 `endif
 
-module picodevice_wrapper #(
+module picodevice_tb_wrapper #(
 	parameter AXI_TEST = 0,
 	parameter VERBOSE = 0
 ) (
