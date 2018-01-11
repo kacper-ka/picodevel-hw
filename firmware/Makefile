@@ -2,8 +2,8 @@
 
 TOOLCHAIN_PREFIX = /opt/riscv32i/bin/riscv32-unknown-elf-
 
-OBJ_DIR = obj
 BUILD_DIR = build
+OBJ_DIR = $(BUILD_DIR)/obj
 LINKER_SCRIPT = pico_zedboard.ld
 
 TEST_DIR = tests
@@ -20,14 +20,15 @@ TESTBENCH_OBJS = \
 	$(OBJ_DIR)/testbench/print.o \
 	$(OBJ_DIR)/testbench/sieve.o \
 	$(OBJ_DIR)/testbench/multest.o \
-	$(OBJ_DIR)/testbench/stats.o
+	$(OBJ_DIR)/testbench/stats.o \
+	$(OBJ_DIR)/testbench/irq.o
 
 GCC_WARNS  = -Werror -Wall -Wextra -Wshadow -Wundef -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings
 GCC_WARNS += -Wredundant-decls -Wstrict-prototypes -Wmissing-prototypes -pedantic # -Wconversion
 
 
 OBJS = $(TEST_OBJS) $(TESTBENCH_OBJS)
-OBJ_DIRS = $(sort $(dir OBJS))
+OBJ_DIRS = $(sort $(dir $(OBJS)))
 
 .PHONY: default
 default:
@@ -41,14 +42,17 @@ clean:
 $(OBJS): | $(OBJ_DIRS)
 
 $(BUILD_DIR):
-	@mkdir -p $@
+	mkdir -p $@
 
-$(OBJ_DIRS):
-	@mkdir -p $@
+$(OBJ_DIRS): | $(BUILD_DIR)
+	mkdir -p $@
 
 .PHONY: firmware-testbench
-firmware-testbench: $(BUILD_DIR)/pico-testbench.elf $(BUILD_DIR)/pico-testbench.bin
+firmware-testbench: $(BUILD_DIR)/pico-testbench.elf $(BUILD_DIR)/pico-testbench.bin $(BUILD_DIR)/pico-testbench.hex
 
+$(BUILD_DIR)/pico-testbench.hex: $(BUILD_DIR)/pico-testbench.bin makehex.py
+	python3 makehex.py $< 16384 > $@
+	
 $(BUILD_DIR)/pico-testbench.bin: $(BUILD_DIR)/pico-testbench.elf
 	$(TOOLCHAIN_PREFIX)objcopy -O binary $< $@
 

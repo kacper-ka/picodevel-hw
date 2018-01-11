@@ -20,7 +20,16 @@
 // will save the rest if necessary. I.e. skip x3, x4, x8, x9, and x18-x27.
 #undef ENABLE_FASTIRQ
 
-#include "custom_ops.S"
+
+#define UART_BASE_ADDR  0xE0000000
+#define UART_REG_SR     44
+#define UART_REG_FIFO   48
+#define UART_SR_TXFULL  0x10
+
+#define RESULT_ADDR   0x00200000
+
+
+#include "../custom_ops.S"
 
 	.section .text
 	.global irq
@@ -31,12 +40,17 @@
 	.global hard_mulhsu
 	.global hard_mulhu
 	.global stats
+    .global outbyte
+    .global puts
 
 reset_vec:
+_start:
+    j start
 	// no more than 16 bytes here !
-	picorv32_waitirq_insn(zero)
-	picorv32_maskirq_insn(zero, zero)
-	j start
+    //picorv32_getcid_insn(x1)
+	//picorv32_waitirq_insn(zero)
+	//picorv32_maskirq_insn(zero, zero)
+	//j start
 
 
 /* Interrupt handler
@@ -332,12 +346,16 @@ irq_regs:
 	// stack for the interrupt handler
 	.fill 128,4
 irq_stack:
-
+    
 
 /* Main program
  **********************************/
 
 start:
+    picorv32_getcid_insn(x1)
+	picorv32_waitirq_insn(zero)
+	picorv32_maskirq_insn(zero, zero)
+    
 	/* zero-initialize all registers */
 
 	addi x1, zero, 0
@@ -443,7 +461,8 @@ start:
 	TEST(simple)
 
 	/* set stack pointer */
-	lui sp,(64*1024)>>12
+	//lui sp,(64*1024)>>12
+    lui sp,_estack>>12
 
 	/* set gp and tp */
 	lui gp, %hi(0xdeadbeef)
@@ -466,19 +485,18 @@ start:
 #endif
 
 	/* print "DONE\n" */
-	lui a0,0x10000000>>12
-	addi a1,zero,'D'
-	addi a2,zero,'O'
-	addi a3,zero,'N'
-	addi a4,zero,'E'
-	addi a5,zero,'\n'
-	sw a1,0(a0)
-	sw a2,0(a0)
-	sw a3,0(a0)
-	sw a4,0(a0)
-	sw a5,0(a0)
-
-	li a0, 0x20000000
+	addi a0,zero,'D'
+    jal  ra,outbyte
+	addi a0,zero,'O'
+    jal  ra,outbyte
+	addi a0,zero,'N'
+    jal  ra,outbyte
+	addi a0,zero,'E'
+    jal  ra,outbyte
+	addi a0,zero,'\n'
+    jal  ra,outbyte
+	
+	li a0, RESULT_ADDR
 	li a1, 123456789
 	sw a1,0(a0)
 
@@ -505,3 +523,26 @@ hard_mulhu:
 	mulhu a0, a0, a1
 	ret
 
+    
+/* Print functions
+ *****************/
+
+outbyte:
+    lui     a1,%hi(UART_BASE_ADDR)
+    addi    a1,a1,%lo(UART_BASE_ADDR)
+1:	lw	    a2,UART_REG_SR(a1)
+	andi	a2,a2,UART_SR_TXFULL
+	bne	    a2,zero,1b
+	sb	    a0,UART_REG_FIFO(a1)
+    ret
+
+puts:
+    addi    s1,ra,0
+    addi    s2,a0,0
+1:  lb      a0,0(s2)
+    beq     a0,zero,2f
+    jal     ra,outbyte
+    addi    s2,s2,1
+    jal     zero,1b
+2:  addi    ra,s1,0
+    ret
