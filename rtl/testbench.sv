@@ -10,7 +10,8 @@
 `ifndef VERILATOR
 module testbench #(
 	parameter AXI_TEST = 0,
-	parameter VERBOSE = 0
+	parameter VERBOSE = 0,
+	parameter CORES_COUNT = 1
 );
 	reg clk = 1;
 	reg resetn = 0;
@@ -33,23 +34,31 @@ module testbench #(
 		$finish;
 	end
 
-	wire trace_valid;
-	wire [35:0] trace_data;
-	integer trace_file;
+	wire trace_valid[CORES_COUNT-1:0];
+	wire [35:0] trace_data[CORES_COUNT-1:0];
+//	string trace_file_name[CORES_COUNT-1:0];
+	integer trace_file[CORES_COUNT-1:0];
 
-	initial begin
-		if ($test$plusargs("trace")) begin
-			trace_file = $fopen("testbench.trace", "w");
-			repeat (10) @(posedge clk);
-			while (!trap) begin
-				@(posedge clk);
-				if (trace_valid)
-					$fwrite(trace_file, "%x\n", trace_data);
-			end
-			$fclose(trace_file);
-			$display("Finished writing testbench.trace.");
-		end
-	end
+    genvar i;
+    generate
+    for (i = 0; i < CORES_COUNT; i = i + 1) begin
+        initial begin
+            string trace_file_name;
+            
+            trace_file_name = $sformatf("testbench.trace%1d", i);
+            $display("Opening %s", trace_file_name);
+            trace_file[i] = $fopen(trace_file_name, "w");
+            repeat (10) @(posedge clk);
+            while (!trap) begin
+                @(posedge clk);
+                if (trace_valid[i])
+                    $fwrite(trace_file[i], "%x\n", trace_data[i]);
+            end
+            $fclose(trace_file[i]);
+            $display("Finished writing %s.", trace_file_name);        
+        end
+    end
+    endgenerate
 
 	picodevice_tb_wrapper #(
 		.AXI_TEST (AXI_TEST),
@@ -66,22 +75,22 @@ endmodule
 
 module picodevice_tb_wrapper #(
 	parameter AXI_TEST = 0,
-	parameter VERBOSE = 0
+	parameter VERBOSE = 0,
+	parameter CORES_COUNT = 1
 ) (
 	input clk,
 	input resetn,
 	output trap,
-	output trace_valid,
-	output [35:0] trace_data
+	output trace_valid[CORES_COUNT-1:0],
+	output [35:0] trace_data[CORES_COUNT-1:0]
 );
+    integer cycle_counter;
 	wire tests_passed;
-	//reg [31:0] irq;
-
-	//always @* begin
-	//	irq = 0;
-	//	irq[4] = &uut.picorv32_core.count_cycle[12:0];
-	//	irq[5] = &uut.picorv32_core.count_cycle[15:0];
-	//end
+	reg [15:0] irq;
+    
+	always @* begin
+		irq = {14'h0, &cycle_counter[15:0], &cycle_counter[12:0]}; 
+	end
 
 	wire        mem_axi_awvalid;
 	wire        mem_axi_awready;
@@ -134,9 +143,13 @@ module picodevice_tb_wrapper #(
 
 		.tests_passed    (tests_passed    )
 	);
+	
+	
+	
 
 	picodevice #(
-		.ENABLE_TRACE(1)
+		.ENABLE_TRACE(1          ),
+		.CORES_COUNT (CORES_COUNT)
 	) uut (
 		.clk            (clk            ),
 		.resetn         (resetn         ),
@@ -158,6 +171,8 @@ module picodevice_tb_wrapper #(
 		.mem_axi_rvalid (mem_axi_rvalid ),
 		.mem_axi_rready (mem_axi_rready ),
 		.mem_axi_rdata  (mem_axi_rdata  ),
+		.irq            (irq            ),
+		.eoi            (               ),
 		.trace_valid    (trace_valid    ),
 		.trace_data     (trace_data     )
 	);
@@ -165,11 +180,11 @@ module picodevice_tb_wrapper #(
 	reg [1023:0] firmware_file;
 	initial begin
 		if (!$value$plusargs("firmware=%s", firmware_file))
-			firmware_file = "firmware/firmware.hex";
-		$readmemh(firmware_file, mem.memory);
+			firmware_file = "D:/MGR/vivado-projects/pico-devel/repo/firmware/build/pico-testbench.hex";
+		$readmemh(firmware_file, mem.mem_ocm);
 	end
 
-	integer cycle_counter;
+	
 	always @(posedge clk) begin
 		cycle_counter <= resetn ? cycle_counter + 1 : 0;
 		if (resetn && trap) begin
@@ -219,7 +234,8 @@ module axi4_memory #(
 
 	output reg tests_passed
 );
-	reg [31:0]   memory [0:64*1024/4-1] /* verilator public */;
+	reg [31:0]   mem_ocm [0: 256*1024/4-1] /* verilator public */;
+	reg [31:0]   mem_ram [0:1024*1024/4-1] /* verilator public */;
 	reg verbose;
 	initial verbose = $test$plusargs("verbose") || VERBOSE;
 
@@ -289,14 +305,21 @@ module axi4_memory #(
 
 	task handle_axi_rvalid; begin
 		if (verbose)
-			$display("RD: ADDR=%08x DATA=%08x%s", latched_raddr, memory[latched_raddr >> 2], latched_rinsn ? " INSN" : "");
-		if (latched_raddr < 64*1024) begin
-			mem_axi_rdata <= memory[latched_raddr >> 2];
+			$display("RD: ADDR=%08x %s", latched_raddr, latched_rinsn ? " INSN" : "");
+		if (latched_raddr < 256*1024) begin
+            // OCM access
+			mem_axi_rdata <= mem_ocm[latched_raddr >> 2];
 			mem_axi_rvalid <= 1;
 			latched_raddr_en = 0;
         end else
-        if (latched_raddr == 32'hE000_102C) begin
-            // query UART status register
+        if (latched_raddr >= 32'h0010_0000 && latched_raddr < 32'h0020_0000) begin
+            // RAM access
+            mem_axi_rdata <= mem_ram[latched_raddr >> 2];
+            mem_axi_rvalid <= 1;
+            latched_raddr_en = 0;
+        end else
+        if (latched_raddr == 32'hE000_002C) begin
+            // UART0 SR access
             mem_axi_rdata <= 0;
             mem_axi_rvalid <= 1;
             latched_raddr_en = 0;
@@ -309,31 +332,38 @@ module axi4_memory #(
 	task handle_axi_bvalid; begin
 		if (verbose)
 			$display("WR: ADDR=%08x DATA=%08x STRB=%04b", latched_waddr, latched_wdata, latched_wstrb);
-		if (latched_waddr < 64*1024) begin
-			if (latched_wstrb[0]) memory[latched_waddr >> 2][ 7: 0] <= latched_wdata[ 7: 0];
-			if (latched_wstrb[1]) memory[latched_waddr >> 2][15: 8] <= latched_wdata[15: 8];
-			if (latched_wstrb[2]) memory[latched_waddr >> 2][23:16] <= latched_wdata[23:16];
-			if (latched_wstrb[3]) memory[latched_waddr >> 2][31:24] <= latched_wdata[31:24];
+		if (latched_waddr < 256*1024) begin
+			if (latched_wstrb[0]) mem_ocm[latched_waddr >> 2][ 7: 0] <= latched_wdata[ 7: 0];
+			if (latched_wstrb[1]) mem_ocm[latched_waddr >> 2][15: 8] <= latched_wdata[15: 8];
+			if (latched_wstrb[2]) mem_ocm[latched_waddr >> 2][23:16] <= latched_wdata[23:16];
+			if (latched_wstrb[3]) mem_ocm[latched_waddr >> 2][31:24] <= latched_wdata[31:24];
 		end else
-        if (latched_waddr == 32'h0000_1000) begin
-            if (latched_wdata == 123456789)
-                tests_passed = 1;
-        end else
-        if (latched_waddr == 32'h0000_1004) begin
+		if (latched_waddr >= 32'h0010_0000 && latched_waddr < 32'h0020_0000) begin
+            if (latched_wstrb[0]) mem_ram[latched_waddr[23:0] >> 2][ 7: 0] <= latched_wdata[ 7: 0];
+            if (latched_wstrb[1]) mem_ram[latched_waddr[23:0] >> 2][15: 8] <= latched_wdata[15: 8];
+            if (latched_wstrb[2]) mem_ram[latched_waddr[23:0] >> 2][23:16] <= latched_wdata[23:16];
+            if (latched_wstrb[3]) mem_ram[latched_waddr[23:0] >> 2][31:24] <= latched_wdata[31:24];
+		end else
+		if (latched_waddr == 32'hE000_0030) begin
+		    // UART0 FIFO access
+		    if (verbose) begin
+                if (32 <= latched_wdata && latched_wdata < 128)
+                    $display("OUT: '%c'", latched_wdata[7:0]);
+                else
+                    $display("OUT: %3d", latched_wdata);
+            end else begin
+                $write("%c", latched_wdata[7:0]);
+`ifndef VERILATOR
+                $fflush();
+`endif
+            end
+		end else
+        if (latched_waddr == 32'h0030_0000) begin
             $display("REPORTED TIMER COUNT: %1d", latched_wdata);
         end else
-		if (latched_waddr == 32'hE000_1030) begin
-			if (verbose) begin
-				if (32 <= latched_wdata && latched_wdata < 128)
-					$display("OUT: '%c'", latched_wdata[7:0]);
-				else
-					$display("OUT: %3d", latched_wdata);
-			end else begin
-				$write("%c", latched_wdata[7:0]);
-`ifndef VERILATOR
-				$fflush();
-`endif
-			end
+        if (latched_waddr == 32'h0020_0000) begin
+            if (latched_wdata == 123456789)
+                tests_passed = 1;
 		end else begin
 			$display("OUT-OF-BOUNDS MEMORY WRITE TO %08x", latched_waddr);
 			$finish;
@@ -393,3 +423,5 @@ module axi4_memory #(
 		if (!mem_axi_bvalid && latched_waddr_en && latched_wdata_en && !delay_axi_transaction[4]) handle_axi_bvalid;
 	end
 endmodule
+
+

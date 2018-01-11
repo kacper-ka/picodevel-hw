@@ -1,4 +1,5 @@
 
+`timescale 1 ns / 1 ps
 
 module picodevice #(
 	parameter [ 0:0] ENABLE_TRACE = 0,

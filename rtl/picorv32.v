@@ -22,7 +22,7 @@
 // `define DEBUGNETS
 // `define DEBUGREGS
 // `define DEBUGASM
-// `define DEBUG
+ `define DEBUG
 
 `ifdef DEBUG
   `define debug(debug_command) debug_command
@@ -35,9 +35,9 @@
   `define assert(assert_expr) assert(assert_expr)
 `else
   `ifdef DEBUGNETS
-    `define FORMAL_KEEP (* keep *)
+	`define FORMAL_KEEP (* keep *)
   `else
-    `define FORMAL_KEEP
+	`define FORMAL_KEEP
   `endif
   `define assert(assert_expr) empty_statement
 `endif
@@ -80,7 +80,8 @@ module picorv32 #(
 	parameter [31:0] LATCHED_IRQ = 32'h ffff_ffff,
 	parameter [31:0] PROGADDR_RESET = 32'h 0000_0000,
 	parameter [31:0] PROGADDR_IRQ = 32'h 0000_0010,
-	parameter [31:0] STACKADDR = 32'h ffff_ffff
+	parameter [31:0] STACKADDR = 32'h ffff_ffff,
+	parameter [31:0] CORE_ID = 32'h 1234_8765
 ) (
 	input clk, resetn,
 	output reg trap,
@@ -633,6 +634,7 @@ module picorv32 #(
 	reg instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and;
 	reg instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh, instr_ecall_ebreak;
 	reg instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer;
+	reg instr_getcid;
 	wire instr_trap;
 
 	reg [regindex_bits-1:0] decoded_rd, decoded_rs1, decoded_rs2;
@@ -664,7 +666,8 @@ module picorv32 #(
 			instr_addi, instr_slti, instr_sltiu, instr_xori, instr_ori, instr_andi, instr_slli, instr_srli, instr_srai,
 			instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and,
 			instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh,
-			instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer};
+			instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer,
+			instr_getcid};
 
 	wire is_rdcycle_rdcycleh_rdinstr_rdinstrh;
 	assign is_rdcycle_rdcycleh_rdinstr_rdinstrh = |{instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh};
@@ -736,6 +739,8 @@ module picorv32 #(
 		if (instr_maskirq)  new_ascii_instr = "maskirq";
 		if (instr_waitirq)  new_ascii_instr = "waitirq";
 		if (instr_timer)    new_ascii_instr = "timer";
+
+		if (instr_getcid)   new_ascii_instr = "getcid";
 	end
 
 	reg [63:0] q_ascii_instr;
@@ -1071,6 +1076,8 @@ module picorv32 #(
 			instr_setq    <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000001 && ENABLE_IRQ && ENABLE_IRQ_QREGS;
 			instr_maskirq <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000011 && ENABLE_IRQ;
 			instr_timer   <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000101 && ENABLE_IRQ && ENABLE_IRQ_TIMER;
+
+			instr_getcid  <= mem_rdata_q[6:0] == 7'b0101011 && mem_rdata_q[31:25] == 7'b0000000;
 
 			is_slli_srli_srai <= is_alu_reg_imm && |{
 				mem_rdata_q[14:12] == 3'b001 && mem_rdata_q[31:25] == 7'b0000000,
@@ -1667,6 +1674,14 @@ module picorv32 #(
 						reg_out <= timer;
 						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
 						timer <= cpuregs_rs1;
+						dbg_rs1val <= cpuregs_rs1;
+						dbg_rs1val_valid <= 1;
+						cpu_state <= cpu_state_fetch;
+					end
+					instr_getcid: begin
+						latched_store <= 1;
+						reg_out <= CORE_ID;
+						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
 						dbg_rs1val <= cpuregs_rs1;
 						dbg_rs1val_valid <= 1;
 						cpu_state <= cpu_state_fetch;
