@@ -82,14 +82,14 @@
 #define r_type_insn(_f7, _rs2, _rs1, _f3, _rd, _opc) \
 .word (((_f7) << 25) | ((_rs2) << 20) | ((_rs1) << 15) | ((_f3) << 12) | ((_rd) << 7) | ((_opc) << 0))
 
-#define i_type_insn(_imm12, _rs1, _f3, _rd, _opc) \
-.word (((_imm12) << 20) | ((_rs1) << 15) | ((_f3) << 12) | ((_rd) << 7) | ((_opc) << 0))
+//#define i_type_insn(_imm12, _rs1, _f3, _rd, _opc) \
+//.word (((_imm12) << 20) | ((_rs1) << 15) | ((_f3) << 12) | ((_rd) << 7) | ((_opc) << 0))
 
-#define s_type_insn(_imm7, _rs2, _rs1, _f3, _imm5, _opc) \
-.word (((_imm7) << 25) | ((_rs2) << 20) | ((_rs1) << 15) | ((_f3) << 12) | ((_imm5) << 7) | ((_opc) << 0))
+//#define s_type_insn(_imm7, _rs2, _rs1, _f3, _imm5, _opc) \
+//.word (((_imm7) << 25) | ((_rs2) << 20) | ((_rs1) << 15) | ((_f3) << 12) | ((_imm5) << 7) | ((_opc) << 0))
 
-#define u_type_insn(_imm20, _rd, _opc) \
-.word (((_imm20) << 12) | ((_rd) << 7) | ((_opc) << 0))
+//#define u_type_insn(_imm20, _rd, _opc) \
+//.word (((_imm20) << 12) | ((_rd) << 7) | ((_opc) << 0))
 
 
 /* IRQ custom instructions */
@@ -118,5 +118,14 @@ r_type_insn(0b0000101, 0, regnum_ ## _rs, 0b110, regnum_ ## _rd, 0b0001011)
 #define OPC_CUSTOM1 0b0101011
 
 #define picorv32_getcid_insn(_rd) \
-r_type_insn(0, 0, 0, 0, regnum_ ## _rd, OPC_CUSTOM1)
+r_type_insn(0, 0, 0, 0, regnum_ ## _rd, 0b0101011)
+
+#define picorv32_fork_insn(_rd) \
+r_type_insn(1, 0, 0, 0, regnum_ ## _rd, 0b0101011)
+
+#define picorv32_join_insn() \
+r_type_insn(2, 0, 0, 0, 0, 0b0101011)
+
+#define picorv32_exit_insn() \
+r_type_insn(3, 0, 0, 0, 0, 0b0101011)
 

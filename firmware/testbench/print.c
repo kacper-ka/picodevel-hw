@@ -7,17 +7,27 @@
 
 #include "firmware.h"
 
-#define OUTPORT 0x10000000
+#define UART_BASE_ADDR  0xE0000000
+
+#define UART_REG_SR     44
+#define UART_REG_FIFO   48
+#define UART_SR_TXFULL  0x10
+
 
 void print_chr(char ch)
 {
-	*((volatile uint32_t*)OUTPORT) = ch;
+	register u32 sr;
+    do
+    {
+        sr = *((volatile u32*) (UART_BASE_ADDR + UART_REG_SR));
+    } while ((sr & UART_SR_TXFULL) != 0);
+    *((volatile u8*) (UART_BASE_ADDR + UART_REG_FIFO)) = ch;
 }
 
 void print_str(const char *p)
 {
 	while (*p != 0)
-		*((volatile uint32_t*)OUTPORT) = *(p++);
+		print_chr(*p++);
 }
 
 void print_dec(unsigned int val)
@@ -29,13 +39,16 @@ void print_dec(unsigned int val)
 		val = val / 10;
 	}
 	while (p != buffer) {
-		*((volatile uint32_t*)OUTPORT) = '0' + *(--p);
+		print_chr('0' + *(--p));
 	}
 }
 
 void print_hex(unsigned int val, int digits)
 {
 	for (int i = (4*digits)-4; i >= 0; i -= 4)
-		*((volatile uint32_t*)OUTPORT) = "0123456789ABCDEF"[(val >> i) % 16];
+    {
+        char c = "0123456789ABCDEF"[(val >> i) % 16];
+        print_chr(c);
+    }
 }
 

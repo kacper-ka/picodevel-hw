@@ -15,7 +15,7 @@ MEMORY
 
 OUTPUT_FORMAT("elf32-littleriscv", "elf32-littleriscv", "elf32-littleriscv")
 OUTPUT_ARCH(riscv)
-ENTRY(_start)
+/* ENTRY(start) */
 
 SECTIONS
 {
@@ -114,45 +114,32 @@ SECTIONS
         *(.data)
         *(.data.*)
         *(.gnu.linkonce.d.*)
-    } > m_private
-
-    /* End of initialized data segment */
-    PROVIDE( edata = . );
-    _edata = .;
-    
-    /* Have _gp point to middle of sdata/sbss to maximize displacement range */
-    . = ALIGN(16);
-    
-    /* Writable small data segment */
-    .sdata : 
-    {
+        . = ALIGN(8);
         *(.sdata)
         *(.sdata.*)
         *(.srodata.*)
         *(.gnu.linkonce.s.*)
     } > m_private
 
+    /* End of initialized data segment */
+    PROVIDE( edata = . );
+    _edata = .;
+
     /*--------------------------------------------------------------------*/
     /* Uninitialized data segment                                         */
     /*--------------------------------------------------------------------*/
     
     /* Start of uninitialized data segment */
-    . = ALIGN(4);
-    _fbss = .;
+
+    . = ALIGN(8);
     
-    /* Writable uninitialized small data segment */
-    .sbss : 
+    _fbss = .;
+    .bss (NOLOAD) :
     {
         *(.sbss)
         *(.sbss.*)
         *(.gnu.linkonce.sb.*)
-    } > m_private
-    
-    /* bss: Uninitialized writeable data section */
-    . = .;
-    _bss_start = .;
-    .bss : 
-    {
+        . = ALIGN(8);
         *(.bss)
         *(.bss.*)
         *(.gnu.linkonce.b.*)
@@ -174,7 +161,7 @@ SECTIONS
     PROVIDE( sshared = . );
     _sshared = .;
     
-    .shared :
+    .shared (NOLOAD) :
     {
         *(.shared)
         *(.shared.*)
@@ -188,7 +175,7 @@ SECTIONS
     PROVIDE( sheap = . );
     _sheap = .;
     
-    .heap :
+    .heap (NOLOAD) :
     {
         KEEP(*(.heap))
         KEEP(*(.heap.*))

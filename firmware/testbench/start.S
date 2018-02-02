@@ -352,10 +352,20 @@ irq_stack:
  **********************************/
 
 start:
-    picorv32_getcid_insn(x1)
-	picorv32_waitirq_insn(zero)
+	picorv32_getcid_insn(x1)
+	lui x3,%hi(0xFFFFFFFF)
+	addi x3,x3,%lo(0xFFFFFFFF)
+	picorv32_fork_insn(x2)
+1:	beq x2,zero,2f
+	beq x2,x3,3f
+	jal zero,1b
+2:	picorv32_join_insn()
+	jal zero,4f
+3:	picorv32_exit_insn()
+	nop
+4:	picorv32_waitirq_insn(zero)
 	picorv32_maskirq_insn(zero, zero)
-    
+
 	/* zero-initialize all registers */
 
 	addi x1, zero, 0
@@ -462,12 +472,16 @@ start:
 
 	/* set stack pointer */
 	//lui sp,(64*1024)>>12
-    lui sp,_estack>>12
+    lui sp,%hi(_estack)
+    addi sp,sp,%lo(_estack)
 
 	/* set gp and tp */
 	lui gp, %hi(0xdeadbeef)
 	addi gp, gp, %lo(0xdeadbeef)
 	addi tp, gp, 0
+    
+    jal ra,__init_data__
+    jal ra,__init_bss__
 
 #ifdef ENABLE_SIEVE
 	/* call sieve C code */
@@ -546,3 +560,30 @@ puts:
     jal     zero,1b
 2:  addi    ra,s1,0
     ret
+
+/* System init
+ *****************/
+__init_data__:
+    lui     a0,%hi(_etext)
+    addi    a0,a0,%lo(_etext)
+    lui     a1,%hi(_fdata)
+    addi    a1,a1,%lo(_fdata)
+    lui     a2,%hi(_edata)
+    addi    a2,a2,%lo(_edata)
+1:  lw      a3,0(a0)
+    sw      a3,0(a1)
+    addi    a0,a0,4
+    addi    a1,a1,4
+    bne     a1,a2,1b
+    ret
+
+__init_bss__:
+    lui     a0,%hi(_fbss)
+    addi    a0,a0,%lo(_fbss)
+    lui     a1,%hi(_ebss)
+    addi    a1,a1,%lo(_ebss)
+1:  sw      zero,0(a0)
+    addi    a0,a0,4
+    bne     a0,a1,1b
+    ret
+    

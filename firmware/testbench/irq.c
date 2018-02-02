@@ -9,8 +9,8 @@
 
 uint32_t *irq(uint32_t *regs, uint32_t irqs)
 {
-	static unsigned int ext_irq_4_count = 0;
-	static unsigned int ext_irq_5_count = 0;
+	static unsigned int ext_irq_8_count = 0;
+	static unsigned int ext_irq_9_count = 0;
 	static unsigned int timer_irq_count = 0;
 
 	// checking compressed isa q0 reg handling
@@ -34,13 +34,13 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs)
 		}
 	}
 
-	if ((irqs & (1<<4)) != 0) {
-		ext_irq_4_count++;
+	if ((irqs & (1<<8)) != 0) {
+		ext_irq_8_count++;
 		// print_str("[EXT-IRQ-4]");
 	}
 
-	if ((irqs & (1<<5)) != 0) {
-		ext_irq_5_count++;
+	if ((irqs & (1<<9)) != 0) {
+		ext_irq_9_count++;
 		// print_str("[EXT-IRQ-5]");
 	}
 
@@ -121,11 +121,11 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs)
 		print_str("------------------------------------------------------------\n");
 
 		print_str("Number of fast external IRQs counted: ");
-		print_dec(ext_irq_4_count);
+		print_dec(ext_irq_8_count);
 		print_str("\n");
 
 		print_str("Number of slow external IRQs counted: ");
-		print_dec(ext_irq_5_count);
+		print_dec(ext_irq_9_count);
 		print_str("\n");
 
 		print_str("Number of timer IRQs counted: ");
