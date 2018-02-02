@@ -425,3 +425,250 @@ module axi4_memory #(
 endmodule
 
 
+
+
+
+module tb_picorv32_pcpi_fork ();
+
+	reg clk, resetn;
+	reg pcpi_valid;
+	reg [31:0] pcpi_insn;
+	wire pcpi_wr;
+	wire signed [31:0] pcpi_rd;
+	wire pcpi_wait, pcpi_ready;
+	
+	reg child_start, child_stop;
+	wire child_resetn, child_valid, child_wen;
+	wire [4:0] child_rd;
+	wire [31:0] child_pc, child_data;
+	reg child_ready, child_cplt;
+	
+	wire fork_dma_req;
+	reg fork_dma_done;
+	
+	wire parent_cplt;
+	
+	reg [31:0] fork_data;
+	wire [4:0] fork_rs;
+	
+	always @* begin
+		fork_data[31:5] = 'b0;
+		fork_data[4:0] = fork_rs;
+	end
+	
+	always begin
+		child_ready = 0;
+		child_cplt = 0;
+		@(posedge child_resetn);
+		#25;
+		if (child_start) begin
+		  child_ready = 1;
+		  @(posedge child_valid);
+		  child_ready = 0;
+		  @(posedge child_stop);
+		  child_cplt = 1;
+		end
+		@(negedge child_resetn);
+	end
+
+	always begin
+		fork_dma_done = 0;
+		@(posedge fork_dma_req);
+		#50
+		fork_dma_done = 1;
+		@(negedge fork_dma_req);
+	end
+	
+	always
+		#5 clk = !clk;
+	
+	initial begin
+		clk = 0;
+		resetn = 0;
+		pcpi_valid = 0;
+		pcpi_insn = 0;
+		pcpi_insn[6:0] = 7'b0101011;
+		child_start = 0;
+		child_stop = 0;
+		#50;
+		resetn = 1;
+		
+		#25;
+		
+		$display("testing instruction coreid");
+		pcpi_insn[14:12] = 3'b000;
+		@(posedge clk);
+		pcpi_valid = 1;
+		@(posedge pcpi_wait);
+		@(posedge pcpi_ready);
+		$display("pcpi_rd = %.8X", pcpi_rd);
+		if (pcpi_rd != 32'h1234_5678) begin
+		  $display("FAIL");
+		  $finish;
+		end
+		//@(posedge clk);
+		pcpi_valid = 0;
+		
+		#25;
+		
+		$display("testing instruction fork, child disabled");
+		pcpi_insn[14:12] = 3'b100;
+		@(posedge clk);
+		pcpi_valid = 1;
+		@(posedge pcpi_wait);
+		@(posedge pcpi_ready);
+		$display("pcpi_rd = %.8X", pcpi_rd);
+		if (pcpi_rd != -1) begin
+		  $display("FAIL");
+		  $finish;
+		end
+		//@(posedge clk);
+		pcpi_valid = 0;
+		
+		#25;
+		
+		$display("testing instruction fork, child enabled");
+		child_start = 1;
+		pcpi_insn[14:12] = 3'b100;
+		@(posedge clk)
+		pcpi_valid = 1;
+		@(posedge pcpi_wait);
+		@(posedge pcpi_ready);
+		$display("pcpi_rd = %.8X", pcpi_rd);
+		if (pcpi_rd != 0) begin
+		  $display("FAIL");
+          $finish;
+		end
+		//@(posedge clk);
+		child_start = 0;
+		pcpi_valid = 0;
+		
+		#25;
+		
+		$display("testing instruction fork, child already running");
+        pcpi_insn[14:12] = 3'b100;
+        @(posedge clk);
+        pcpi_valid = 1;
+        @(posedge pcpi_wait);
+        @(posedge pcpi_ready);
+        $display("pcpi_rd = %.8X", pcpi_rd);
+        if (pcpi_rd != -1) begin
+            $display("FAIL");
+            $finish;
+        end
+        //@(posedge clk);
+        pcpi_valid = 0;
+        
+        #25;
+		
+		$display("testing instruction join, child running");
+		pcpi_insn[14:12] = 3'b101;
+		@(posedge clk)
+		pcpi_valid = 1;
+		@(posedge pcpi_wait);
+		#100;
+		child_stop = 1;
+		@(posedge pcpi_ready);
+		//@(posedge clk);
+		child_stop = 0;
+		pcpi_valid = 0;
+		
+		#25;
+		
+		$display("testing instruction join, child not running");
+        pcpi_insn[14:12] = 3'b101;
+        @(posedge clk)
+        pcpi_valid = 1;
+        @(posedge pcpi_wait);
+        @(posedge pcpi_ready);
+        //@(posedge clk);
+        pcpi_valid = 0;
+        
+        #25;
+        
+        $display("testing instruction fork, child enabled");
+        child_start = 1;
+        pcpi_insn[14:12] = 3'b100;
+        @(posedge clk)
+        pcpi_valid = 1;
+        @(posedge pcpi_wait);
+        @(posedge pcpi_ready);
+        $display("pcpi_rd = %.8X", pcpi_rd);
+        if (pcpi_rd != 0) begin
+            $display("FAIL");
+            $finish;
+        end
+        //@(posedge clk);
+        child_start = 0;
+        pcpi_valid = 0;
+        
+        #25;
+        
+        $display("testing instruction join, child already completed");
+        pcpi_insn[14:12] = 3'b101;
+        child_stop = 1;
+        #25;
+        @(posedge clk)
+        pcpi_valid = 1;
+        @(posedge pcpi_wait);
+        @(posedge pcpi_ready);
+        //@(posedge clk);
+        child_stop = 0;
+        pcpi_valid = 0;
+        
+        #25;
+        
+        $display("testing instruction exit");
+        pcpi_insn[14:12] = 3'b110;
+        @(posedge clk)
+        pcpi_valid = 1;
+        @(posedge pcpi_wait);
+        @(posedge parent_cplt);
+        #25;
+        resetn = 0;
+        
+        #50 $display("DONE");
+		#25 $finish;
+	end
+	
+	initial begin
+		#10000;
+		$display("TIMEOUT");
+		$finish;
+	end
+	
+
+	picorv32_pcpi_fork dut (
+		.clk(clk), .resetn(resetn),
+		
+		.pcpi_valid(pcpi_valid   ),
+		.pcpi_insn (pcpi_insn    ),
+		.pcpi_rs1  (32'h0000_0000),
+		.pcpi_rs2  (32'h0000_0000),
+		.pcpi_wr   (pcpi_wr      ),
+		.pcpi_rd   (pcpi_rd      ),
+		.pcpi_wait (pcpi_wait    ),
+		.pcpi_ready(pcpi_ready   ),
+		
+		.child_resetn(child_resetn),
+		.child_ready (child_ready ),
+		.child_valid (child_valid ),
+		.child_pc    (child_pc    ),
+		.child_cplt  (child_cplt  ),
+		.child_rd    (child_rd    ),
+		.child_data  (child_data  ),
+		.child_wen   (child_wen   ),
+		
+		.dma_req (fork_dma_req ),
+		.dma_done(fork_dma_done),
+		
+		.parent_cplt(parent_cplt),
+		
+		.cpu_next_pc(32'h0000_0004),
+		.cpu_rd     (32'h0000_0001),
+		.cpu_rs     (fork_rs      ),
+		.cpu_data   (fork_data    )
+	);
+
+endmodule
+
