@@ -352,16 +352,16 @@ irq_stack:
  **********************************/
 
 start:
-	picorv32_getcid_insn(x1)
-	lui x3,%hi(0xFFFFFFFF)
-	addi x3,x3,%lo(0xFFFFFFFF)
-	picorv32_fork_insn(x2)
-1:	beq x2,zero,2f
-	beq x2,x3,3f
-	jal zero,1b
+	lui x2,%hi(0xFFFFFFFF)
+	addi x2,x2,%lo(0xFFFFFFFF)
+	picorv32_fork_insn(x1)
+1:	beq x1,zero,2f // jump to join if fork successful
+	beq x1,x2,3f // jump to epilogue if fork failed
+	jal zero,1b // newly spawned process jumps to fork
 2:	picorv32_join_insn()
-	jal zero,4f
-3:	picorv32_exit_insn()
+3:	picorv32_coreid_insn(x1) // load coreid
+	beq x1,zero,4f // topmost core, continue execution
+	picorv32_exit_insn()
 	nop
 4:	picorv32_waitirq_insn(zero)
 	picorv32_maskirq_insn(zero, zero)

@@ -117,15 +117,15 @@ r_type_insn(0b0000101, 0, regnum_ ## _rs, 0b110, regnum_ ## _rd, 0b0001011)
 
 #define OPC_CUSTOM1 0b0101011
 
-#define picorv32_getcid_insn(_rd) \
-r_type_insn(0, 0, 0, 0, regnum_ ## _rd, 0b0101011)
+#define picorv32_coreid_insn(_rd) \
+r_type_insn(0b0000001, 0, 0, 0b000, regnum_ ## _rd, 0b0101011)
 
 #define picorv32_fork_insn(_rd) \
-r_type_insn(1, 0, 0, 0, regnum_ ## _rd, 0b0101011)
+r_type_insn(0b0000000, 0, 0, 0b100, regnum_ ## _rd, 0b0101011)
 
 #define picorv32_join_insn() \
-r_type_insn(2, 0, 0, 0, 0, 0b0101011)
+r_type_insn(0b0000000, 0, 0, 0b101, 0, 0b0101011)
 
 #define picorv32_exit_insn() \
-r_type_insn(3, 0, 0, 0, 0, 0b0101011)
+r_type_insn(0b0000010, 0, 0, 0b000, 0, 0b0101011)
 

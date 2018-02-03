@@ -139,29 +139,28 @@ module picorv32 #(
 	output reg [31:0] rvfi_mem_wdata,
 `endif
 
-	// Fork Interface, facing child
-	output reg        fork_resetn_o,
-	input             fork_ready_i,
-	output reg        fork_valid_o,
-	output reg [31:0] fork_pc_o,
-	input             fork_cplt_i,
+	// Fork Interface, facing child, relayed from sub-core
+	output            child_resetn,
+	input             child_ready,
+	output            child_valid,
+	output     [31:0] child_pc,
+	input             child_cplt,
 	// register copying interface
-	output reg [ 5:0] fork_rd_o,
-	output reg [31:0] fork_data_o,
-	output reg        fork_wen_o,
+	output     [ 4:0] child_rd,
+	output     [31:0] child_data,
+	output            child_wen,
 	// fork DMA request and completion signal
-	output reg        fork_dma_req,
+	output            fork_dma_req,
 	input             fork_dma_done,
 
 	// Fork Interface, facing parent
-	output reg        fork_ready_o,
-	input             fork_valid_i,
-	input      [31:0] fork_pc_i,
-	output reg        fork_cplt_o,
+	output reg        init_ready,
+	input             init_valid,
+	input      [31:0] init_pc,
 	// register copying interface
-	input      [ 5:0] fork_rd_i,
-	input      [31:0] fork_data_i,
-	input             fork_wen_i,
+	input      [ 4:0] init_rd,
+	input      [31:0] init_data,
+	input             init_wen,
 
 	// Trace Interface
 	output reg        trace_valid,
@@ -272,6 +271,14 @@ module picorv32 #(
 	wire [31:0] pcpi_div_rd;
 	wire        pcpi_div_wait;
 	wire        pcpi_div_ready;
+	
+	wire        pcpi_fork_wr;
+	wire [31:0] pcpi_fork_rd;
+	wire        pcpi_fork_wait;
+	wire        pcpi_fork_ready;
+	
+	wire [ 4:0] pcpi_fork_rs;
+	reg  [31:0] pcpi_fork_data;
 
 	reg        pcpi_int_wr;
 	reg [31:0] pcpi_int_rd;
@@ -330,12 +337,52 @@ module picorv32 #(
 		assign pcpi_div_wait = 0;
 		assign pcpi_div_ready = 0;
 	end endgenerate
+	
+	generate if (ENABLE_FORK) begin
+		picorv32_pcpi_fork pcpi_fork (
+			.clk         (clk            ),
+			.resetn      (resetn         ),
+			.pcpi_valid  (pcpi_valid     ),
+			.pcpi_insn   (pcpi_insn      ),
+			.pcpi_rs1    (pcpi_rs1       ),
+			.pcpi_rs2    (pcpi_rs2       ),
+			.pcpi_wr     (pcpi_fork_wr   ),
+			.pcpi_rd     (pcpi_fork_rd   ),
+			.pcpi_wait   (pcpi_fork_wait ),
+			.pcpi_ready  (pcpi_fork_ready),
+			.child_resetn(child_resetn   ),
+			.child_ready (child_ready    ),
+			.child_valid (child_valid    ),
+			.child_pc    (child_pc       ),
+			.child_cplt  (child_cplt     ),
+			.child_rd    (child_rd       ),
+			.child_data  (child_data     ),
+			.child_wen   (child_wen      ),
+			.dma_req     (fork_dma_req   ),
+			.dma_done    (fork_dma_done  ),
+			.cpu_next_pc (next_pc        ),
+			.cpu_rs      (pcpi_fork_rs   ),
+			.cpu_data    (pcpi_fork_data )
+		);
+	end else begin
+		assign pcpi_fork_wr = 0;
+		assign pcpi_fork_rd = 32'bx;
+		assign pcpi_fork_wait = 0;
+		assign pcpi_fork_ready = 0;
+		assign child_resetn = 0;
+		assign child_valid = 0;
+		assign child_pc = 32'bx;
+		assign child_rd = 5'bx;
+		assign child_data = 32'bx;
+		assign child_wen = 0;
+		assign fork_dma_req = 0;
+	end endgenerate
 
 	always @* begin
 		pcpi_int_wr = 0;
 		pcpi_int_rd = 32'bx;
-		pcpi_int_wait  = |{ENABLE_PCPI && pcpi_wait,  (ENABLE_MUL || ENABLE_FAST_MUL) && pcpi_mul_wait,  ENABLE_DIV && pcpi_div_wait};
-		pcpi_int_ready = |{ENABLE_PCPI && pcpi_ready, (ENABLE_MUL || ENABLE_FAST_MUL) && pcpi_mul_ready, ENABLE_DIV && pcpi_div_ready};
+		pcpi_int_wait  = |{ENABLE_PCPI && pcpi_wait,  (ENABLE_MUL || ENABLE_FAST_MUL) && pcpi_mul_wait,  ENABLE_DIV && pcpi_div_wait, ENABLE_FORK && pcpi_fork_wait};
+		pcpi_int_ready = |{ENABLE_PCPI && pcpi_ready, (ENABLE_MUL || ENABLE_FAST_MUL) && pcpi_mul_ready, ENABLE_DIV && pcpi_div_ready, ENABLE_FORK && pcpi_fork_ready};
 
 		(* parallel_case *)
 		case (1'b1)
@@ -350,6 +397,10 @@ module picorv32 #(
 			ENABLE_DIV && pcpi_div_ready: begin
 				pcpi_int_wr = pcpi_div_wr;
 				pcpi_int_rd = pcpi_div_rd;
+			end
+			ENABLE_FORK && pcpi_fork_ready: begin
+				pcpi_int_wr = pcpi_fork_wr;
+				pcpi_int_rd = pcpi_fork_rd;
 			end
 		endcase
 	end
@@ -659,10 +710,10 @@ module picorv32 #(
 	reg instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and;
 	reg instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh, instr_ecall_ebreak;
 	reg instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer;
-	reg instr_getcid, instr_fork, instr_join, instr_exit;
+	reg instr_coreid, instr_exit;
 	wire instr_trap;
 
-	reg [regindex_bits-1:0] decoded_rd, decoded_rs1, decoded_rs2, fork_rs;
+	reg [regindex_bits-1:0] decoded_rd, decoded_rs1, decoded_rs2;
 	reg [31:0] decoded_imm, decoded_imm_uj;
 	reg decoder_trigger;
 	reg decoder_trigger_q;
@@ -692,7 +743,7 @@ module picorv32 #(
 			instr_add, instr_sub, instr_sll, instr_slt, instr_sltu, instr_xor, instr_srl, instr_sra, instr_or, instr_and,
 			instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh,
 			instr_getq, instr_setq, instr_retirq, instr_maskirq, instr_waitirq, instr_timer,
-			instr_getcid, instr_fork, instr_join, instr_exit};
+			instr_coreid, instr_exit};
 
 	wire is_rdcycle_rdcycleh_rdinstr_rdinstrh;
 	assign is_rdcycle_rdcycleh_rdinstr_rdinstrh = |{instr_rdcycle, instr_rdcycleh, instr_rdinstr, instr_rdinstrh};
@@ -765,9 +816,7 @@ module picorv32 #(
 		if (instr_waitirq)  new_ascii_instr = "waitirq";
 		if (instr_timer)    new_ascii_instr = "timer";
 
-		if (instr_getcid)   new_ascii_instr = "getcid";
-		if (instr_fork)     new_ascii_instr = "fork";
-		if (instr_join)     new_ascii_instr = "join";
+		if (instr_coreid)   new_ascii_instr = "coreid";
 		if (instr_exit)     new_ascii_instr = "exit";
 	end
 
@@ -902,9 +951,6 @@ module picorv32 #(
 
 			if (mem_rdata_latched[6:0] == 7'b0001011 && mem_rdata_latched[31:25] == 7'b0000010 && ENABLE_IRQ)
 				decoded_rs1 <= ENABLE_IRQ_QREGS ? irqregs_offset : 3; // instr_retirq
-			
-			if (mem_rdata_latched[6:0] == 7'b0101011 && mem_rdata_latched[31:25] == 7'b0000001 && ENABLE_FORK)
-				decoded_rs1 <= fork_rs; // instr_fork
 
 			compressed_instr <= 0;
 			if (COMPRESSED_ISA && mem_rdata_latched[1:0] != 2'b11) begin
@@ -1109,10 +1155,8 @@ module picorv32 #(
 			instr_timer   <= mem_rdata_q[6:0] == 7'b0001011 && mem_rdata_q[31:25] == 7'b0000101 && ENABLE_IRQ && ENABLE_IRQ_TIMER;
 
 			// forking-related instructions, all R-type
-			instr_getcid  <= mem_rdata_q[6:0] == 7'b0101011 && mem_rdata_q[31:25] == 7'b0000000 && ENABLE_FORK;
-			instr_fork    <= mem_rdata_q[6:0] == 7'b0101011 && mem_rdata_q[31:25] == 7'b0000001 && ENABLE_FORK;
-			instr_join    <= mem_rdata_q[6:0] == 7'b0101011 && mem_rdata_q[31:25] == 7'b0000010 && ENABLE_FORK;
-			instr_exit    <= mem_rdata_q[6:0] == 7'b0101011 && mem_rdata_q[31:25] == 7'b0000011 && ENABLE_FORK;
+			instr_coreid  <= mem_rdata_q[6:0] == 7'b0101011 && mem_rdata_q[31:25] == 7'b0000001 && ENABLE_FORK;
+			instr_exit    <= mem_rdata_q[6:0] == 7'b0101011 && mem_rdata_q[31:25] == 7'b0000010 && ENABLE_FORK;
 
 			is_slli_srli_srai <= is_alu_reg_imm && |{
 				mem_rdata_q[14:12] == 3'b001 && mem_rdata_q[31:25] == 7'b0000000,
@@ -1189,23 +1233,18 @@ module picorv32 #(
 
 	// Main State Machine
 
-	localparam cpu_state_trap   = 12'h800;
-	localparam cpu_state_fetch  = 12'h400;
-	localparam cpu_state_ld_rs1 = 12'h200;
-	localparam cpu_state_ld_rs2 = 12'h100;
-	localparam cpu_state_exec   = 12'h080;
-	localparam cpu_state_shift  = 12'h040;
-	localparam cpu_state_stmem  = 12'h020;
-	localparam cpu_state_ldmem  = 12'h010;
-	localparam cpu_state_init   = 12'h008;
-	localparam cpu_state_fork   = 12'h004;
-	localparam cpu_state_join   = 12'h002;
-	localparam cpu_state_fini   = 12'h001;
+	localparam cpu_state_trap   = 9'h100;
+	localparam cpu_state_fetch  = 9'h080;
+	localparam cpu_state_ld_rs1 = 9'h040;
+	localparam cpu_state_ld_rs2 = 9'h020;
+	localparam cpu_state_exec   = 9'h010;
+	localparam cpu_state_shift  = 9'h008;
+	localparam cpu_state_stmem  = 9'h004;
+	localparam cpu_state_ldmem  = 9'h002;
+	localparam cpu_state_init   = 9'h001;
 	
-
-	reg [11:0] cpu_state;
+	reg [8:0] cpu_state;
 	reg [1:0] irq_state;
-	reg fork_regs_copy_done;
 
 	`FORMAL_KEEP reg [127:0] dbg_ascii_state;
 
@@ -1220,8 +1259,6 @@ module picorv32 #(
 		if (cpu_state == cpu_state_stmem)  dbg_ascii_state = "stmem";
 		if (cpu_state == cpu_state_ldmem)  dbg_ascii_state = "ldmem";
 		if (cpu_state == cpu_state_init)   dbg_ascii_state = "init";
-		if (cpu_state == cpu_state_fini)   dbg_ascii_state = "fini";
-		if (cpu_state == cpu_state_fork)   dbg_ascii_state = "fork";
 	end
 
 	reg set_mem_do_rinst;
@@ -1246,10 +1283,6 @@ module picorv32 #(
 
 	reg [31:0] next_irq_pending;
 	reg do_waitirq;
-	
-	reg do_join; 
-	reg [3:0] fork_timeout_counter;
-	reg fork_timeout;
 
 	reg [31:0] alu_out, alu_out_q;
 	reg alu_out_0, alu_out_0_q;
@@ -1338,14 +1371,15 @@ module picorv32 #(
 	reg [31:0] cpuregs_rs1;
 	reg [31:0] cpuregs_rs2;
 	reg [regindex_bits-1:0] decoded_rs;
+	reg [regindex_bits-1:0] demuxed_rs1;
 
 	always @* begin
 		cpuregs_write = 0;
 		cpuregs_wrdata = 'bx;
 
-		if (cpu_state == cpu_state_init) begin
-			cpuregs_wrdata = fork_data_i;
-			cpuregs_write = fork_wen_i;
+		if (ENABLE_FORK && cpu_state == cpu_state_init) begin
+			cpuregs_wrdata = init_data;
+			cpuregs_write = init_wen;
 		end else
 		if (cpu_state == cpu_state_fetch) begin
 			(* parallel_case *)
@@ -1369,6 +1403,12 @@ module picorv32 #(
 			endcase
 		end
 	end
+		
+	always @* begin
+		demuxed_rs1 = decoded_rs1;
+		if (ENABLE_FORK && pcpi_fork_wait)
+			demuxed_rs1 = pcpi_fork_rs;
+	end
 
 `ifndef PICORV32_REGS
 	always @(posedge clk) begin
@@ -1381,14 +1421,14 @@ module picorv32 #(
 		decoded_rs = 'bx;
 		if (ENABLE_REGS_DUALPORT) begin
 `ifndef RISCV_FORMAL_BLACKBOX_REGS
-			cpuregs_rs1 = decoded_rs1 ? cpuregs[decoded_rs1] : 0;
+			cpuregs_rs1 = demuxed_rs1 ? cpuregs[demuxed_rs1] : 0;
 			cpuregs_rs2 = decoded_rs2 ? cpuregs[decoded_rs2] : 0;
 `else // RISCV_FORMAL_BLACKBOX_REGS
-			cpuregs_rs1 = decoded_rs1 ? $anyseq : 0;
+			cpuregs_rs1 = demuxed_rs1 ? $anyseq : 0;
 			cpuregs_rs2 = decoded_rs2 ? $anyseq : 0;
 `endif // RISCV_FORMAL_BLACKBOX_REGS
 		end else begin
-			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : decoded_rs1;
+			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : demuxed_rs1;
 `ifndef RISCV_FORMAL_BLACKBOX_REGS
 			cpuregs_rs1 = decoded_rs ? cpuregs[decoded_rs] : 0;
 `else // RISCV_FORMAL_BLACKBOX_REGS
@@ -1402,7 +1442,7 @@ module picorv32 #(
 	wire[31:0] cpuregs_rdata2;
 
 	wire [5:0] cpuregs_waddr = latched_rd;
-	wire [5:0] cpuregs_raddr1 = ENABLE_REGS_DUALPORT ? decoded_rs1 : decoded_rs;
+	wire [5:0] cpuregs_raddr1 = ENABLE_REGS_DUALPORT ? demuxed_rs1 : decoded_rs;
 	wire [5:0] cpuregs_raddr2 = ENABLE_REGS_DUALPORT ? decoded_rs2 : 0;
 
 	`PICORV32_REGS cpuregs (
@@ -1419,10 +1459,10 @@ module picorv32 #(
 	always @* begin
 		decoded_rs = 'bx;
 		if (ENABLE_REGS_DUALPORT) begin
-			cpuregs_rs1 = decoded_rs1 ? cpuregs_rdata1 : 0;
+			cpuregs_rs1 = demuxed_rs1 ? cpuregs_rdata1 : 0;
 			cpuregs_rs2 = decoded_rs2 ? cpuregs_rdata2 : 0;
 		end else begin
-			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : decoded_rs1;
+			decoded_rs = (cpu_state == cpu_state_ld_rs2) ? decoded_rs2 : demuxed_rs1;
 			cpuregs_rs1 = decoded_rs ? cpuregs_rdata1 : 0;
 			cpuregs_rs2 = cpuregs_rs1;
 		end
@@ -1462,14 +1502,14 @@ module picorv32 #(
 			pcpi_timeout <= !pcpi_timeout_counter;
 		end
 		
-		if (ENABLE_FORK) begin
-			if (resetn && fork_resetn_o && !fork_ready_i) begin
-				if (fork_timeout_counter)
-					fork_timeout_counter <= fork_timeout_counter - 1;
-			end else
-				fork_timeout_counter <= ~0;
-			fork_timeout <= !fork_timeout_counter;
-		end
+//		if (ENABLE_FORK) begin
+//			if (resetn && fork_resetn_o && !fork_ready_i) begin
+//				if (fork_timeout_counter)
+//					fork_timeout_counter <= fork_timeout_counter - 1;
+//			end else
+//				fork_timeout_counter <= ~0;
+//			fork_timeout <= !fork_timeout_counter;
+//		end
 
 		if (ENABLE_COUNTERS) begin
 			count_cycle <= resetn ? count_cycle + 1 : 0;
@@ -1496,7 +1536,6 @@ module picorv32 #(
 		decoder_pseudo_trigger <= 0;
 		decoder_pseudo_trigger_q <= decoder_pseudo_trigger;
 		do_waitirq <= 0;
-		do_join <= 0;
 
 		trace_valid <= 0;
 
@@ -1529,24 +1568,23 @@ module picorv32 #(
 				latched_rd <= 2;
 				reg_out <= STACKADDR;
 			end
-			//cpu_state <= cpu_state_fetch;
-			cpu_state <= cpu_state_init;
-			fork_ready_o <= 0;
-			fork_cplt_o <= 0;
-			fork_timeout <= 0;
+			cpu_state <= ENABLE_FORK ? cpu_state_init : cpu_state_fetch;
+			init_ready <= 0;
 		
 		end else
 		(* parallel_case, full_case *)
 		case (cpu_state)
-			cpu_state_init: begin
-				latched_rd <= fork_rd_i;
+			ENABLE_FORK && cpu_state_init: begin
+				init_ready <= 1;
+				latched_rd <= init_rd;
 				
-				if (fork_valid_i) begin
-					reg_pc <= fork_pc_i;
-					reg_next_pc <= fork_pc_i;
+				if (init_valid) begin
+					reg_pc <= init_pc;
+					reg_next_pc <= init_pc;
 					reg_out <= CORE_ID;
 					latched_store <= 1;
 					cpu_state <= cpu_state_fetch;
+					init_ready <= 0;
 				end
 			end
 
@@ -1555,7 +1593,7 @@ module picorv32 #(
 			end
 
 			cpu_state_fetch: begin
-				mem_do_rinst <= !decoder_trigger && !do_waitirq && !do_join;
+				mem_do_rinst <= !decoder_trigger && !do_waitirq;
 				mem_wordsize <= 0;
 
 				current_pc = reg_next_pc;
@@ -1619,13 +1657,6 @@ module picorv32 #(
 						mem_do_rinst <= 1;
 					end else
 						do_waitirq <= 1;
-				end else
-				if (ENABLE_FORK && (decoder_trigger || do_join) && instr_join) begin
-					if (!fork_resetn_o || fork_cplt_i) begin
-						reg_next_pc <= current_pc + (compressed_instr ? 2 : 4);
-						mem_do_rinst <= 1;
-					end else
-						do_join <= 1;
 				end else
 				if (decoder_trigger) begin
 					`debug($display("-- %-0t", $time);)
@@ -1766,7 +1797,7 @@ module picorv32 #(
 						dbg_rs1val_valid <= 1;
 						cpu_state <= cpu_state_fetch;
 					end
-					ENABLE_FORK && instr_getcid: begin
+					ENABLE_FORK && instr_coreid: begin
 						latched_store <= 1;
 						reg_out <= CORE_ID;
 						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
@@ -1774,20 +1805,20 @@ module picorv32 #(
 						dbg_rs1val_valid <= 1;
 						cpu_state <= cpu_state_fetch;
 					end
-					ENABLE_FORK && instr_fork: begin
-						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
-						dbg_rs1val <= cpuregs_rs1;
-						dbg_rs1val_valid <= 1;
-						fork_resetn_o <= 1;
-						fork_pc_o <= reg_next_pc;
-						fork_rs <= 0;
-						cpu_state <= cpu_state_fork;
-					end
+//					ENABLE_FORK && instr_fork: begin
+//						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
+//						dbg_rs1val <= cpuregs_rs1;
+//						dbg_rs1val_valid <= 1;
+//						fork_resetn_o <= 1;
+//						fork_pc_o <= reg_next_pc;
+//						fork_rs <= 0;
+//						cpu_state <= cpu_state_fork;
+//					end
 					ENABLE_FORK && instr_exit: begin
 						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
 						dbg_rs1val <= cpuregs_rs1;
 						dbg_rs1val_valid <= 1;
-						cpu_state <= cpu_state_fini;
+						cpu_state <= cpu_state_trap;
 					end
 					is_lb_lh_lw_lbu_lhu && !instr_trap: begin
 						`debug($display("LD_RS1: %2d 0x%08x", decoded_rs1, cpuregs_rs1);)
@@ -2007,31 +2038,31 @@ module picorv32 #(
 				end
 			end
 		
-			ENABLE_FORK && cpu_state_fork: begin
-				if (fork_timeout) begin
-					reg_out <= 'b1;
-					latched_store <= 1;
-					cpu_state <= cpu_state_fetch;
-				end else if(fork_valid_i) begin
-					fork_wen_o <= 0;
-					fork_data_o <= cpuregs_rs1;
-					fork_rd_o <= fork_rs;
-					if (fork_rs < irqregs_offset) begin
-						fork_wen_o <= 1;
-						fork_rs <= fork_rs + 1;
-					end else begin
-						fork_rs <= latched_rd;
-						fork_valid_o <= 1;
-						reg_out <= 'b0;
-						latched_store <= 1;
-						cpu_state <= cpu_state_fetch;
-					end
-				end
-			end
+//			ENABLE_FORK && cpu_state_fork: begin
+//				if (fork_timeout) begin
+//					reg_out <= 'b1;
+//					latched_store <= 1;
+//					cpu_state <= cpu_state_fetch;
+//				end else if(fork_valid_i) begin
+//					fork_wen_o <= 0;
+//					fork_data_o <= cpuregs_rs1;
+//					fork_rd_o <= fork_rs;
+//					if (fork_rs < irqregs_offset) begin
+//						fork_wen_o <= 1;
+//						fork_rs <= fork_rs + 1;
+//					end else begin
+//						fork_rs <= latched_rd;
+//						fork_valid_o <= 1;
+//						reg_out <= 'b0;
+//						latched_store <= 1;
+//						cpu_state <= cpu_state_fetch;
+//					end
+//				end
+//			end
 			
-			ENABLE_FORK && cpu_state_fini: begin
-				fork_cplt_o <= 1;
-			end
+//			ENABLE_FORK && cpu_state_fini: begin
+//				fork_cplt_o <= 1;
+//			end
 		endcase
 
 		if (CATCH_MISALIGN && resetn && (mem_do_rdata || mem_do_wdata)) begin
@@ -2614,17 +2645,14 @@ endmodule
 	output reg        dma_req,
 	input             dma_done,
 	
-	output reg        parent_cplt,
-	
 	input      [31:0] cpu_next_pc,
-	input      [ 4:0] cpu_rd,
 	output reg [ 4:0] cpu_rs,
 	input      [31:0] cpu_data
 );
-	reg instr_coreid, instr_fork, instr_join, instr_exit;
-	reg instr_coreid_finish, instr_fork_finish, instr_join_finish;
-	wire instr_any = |{instr_coreid, instr_fork, instr_join, instr_exit};
-	wire instr_finish = |{instr_coreid_finish, instr_fork_finish, instr_join_finish};
+	reg instr_fork, instr_join;
+	reg instr_fork_finish, instr_join_finish;
+	wire instr_any = |{instr_fork, instr_join};
+	wire instr_finish = |{instr_fork_finish, instr_join_finish};
 
 	reg pcpi_wait_q;
 	wire start = pcpi_wait && !pcpi_wait_q;
@@ -2633,27 +2661,26 @@ endmodule
 	reg [ 3:0] fork_timeout_counter;
 	reg [31:0] fork_result;
 	reg fork_timeout;
+	reg [ 4:0] latched_rd;
 	
-	reg join_busy;
+	reg join_waiting;
 	
 	reg child_resetn_set, child_resetn_rst_fork, child_resetn_rst_join;
 	wire child_resetn_rst = |{child_resetn_rst_fork, child_resetn_rst_join};
 	
 	// trigger detection
 	always @(posedge clk) begin
-		instr_coreid <= 0;
 		instr_fork <= 0;
 		instr_join <= 0;
-		instr_exit <= 0;
+		latched_rd <= 0;
 
 		if (resetn && pcpi_valid && !pcpi_ready 
 			&& pcpi_insn[6:0] == 7'b0101011 && pcpi_insn[31:25] == 7'b0000000) begin
 			case (pcpi_insn[14:12])
-				3'b000: instr_coreid <= 1;
 				3'b100: instr_fork <= 1;
 				3'b101: instr_join <= 1;
-				3'b110: instr_exit <= 1;
 			endcase
+			latched_rd <= pcpi_insn[11:7];
 		end
 
 		pcpi_wait <= instr_any && resetn;
@@ -2662,14 +2689,16 @@ endmodule
 	
 	// pcpi output driver
 	always @(posedge clk) begin
-		if (!resetn || !instr_any) begin
-			pcpi_wr <= 0;
-			pcpi_ready <= 0;
-			pcpi_rd <= 'bx;
-		end else if (instr_finish) begin
+		pcpi_wr <= 0;
+		pcpi_ready <= 0;
+		pcpi_rd <= 'bx;
+		
+		if (instr_finish && instr_fork) begin
 			pcpi_ready <= 1;
-			pcpi_rd <= (instr_fork) ? fork_result : CORE_ID;
-			pcpi_wr <= (instr_fork || instr_coreid) ? 1 : 0;
+			if (instr_fork) begin
+				pcpi_rd <= fork_result;
+				pcpi_wr <= 1;
+			end
 		end
 	end
 	
@@ -2738,7 +2767,7 @@ endmodule
 						child_wen <= 1;
 						cpu_rs <= cpu_rs - 1;
 					end else begin
-						child_rd <= cpu_rd;
+						child_rd <= latched_rd;
 						if (dma_done) begin
 							fork_fsm_state <= 3'b100;
 							dma_req <= 0;
@@ -2761,33 +2790,14 @@ endmodule
 		instr_join_finish <= 0;
 		
 		if (!resetn)
-			join_busy <= 0;
+			join_waiting <= 0;
 		else if (start && instr_join) begin
-			if (child_resetn)
-				join_busy <= 1;
-			else
-				instr_join_finish <= 1;
-		end else if (join_busy && child_cplt) begin
+			join_waiting <= 1;
+		end else if (join_waiting && (child_cplt || !child_resetn)) begin
 			child_resetn_rst_join <= 1;
-			join_busy <= 0;
 			instr_join_finish <= 1;
+			join_waiting <= 0;
 		end
-	end
-	
-	// exit machine
-	always @(posedge clk) begin
-		if (!resetn)
-			parent_cplt <= 0;
-		else if (start && instr_exit)
-			parent_cplt <= 1;
-	end
-	
-	// cpuid machine
-	always @(posedge clk) begin
-		instr_coreid_finish <= 0;
-		
-		if (resetn && start && instr_coreid)
-			instr_coreid_finish <= 1;
 	end
 	
 endmodule

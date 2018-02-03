@@ -105,32 +105,32 @@ module picodevice #(
     assign irq_cpu[0] = {8'h00, irq, 8'h00};
     assign eoi = eoi_cpu[0][23:8];
     
-    /* fork interface */
-     wire        fork_ready[CORES_COUNT:0];
-     wire        fork_valid[CORES_COUNT:0];
-     wire [31:0] fork_pc   [CORES_COUNT:0];
-     wire        fork_cplt [CORES_COUNT:0];
-     wire [ 5:0] fork_rd   [CORES_COUNT:0];
-     wire [31:0] fork_data [CORES_COUNT:0];
-     wire        fork_wen  [CORES_COUNT:0];
-     assign fork_valid[0] = 1;
-     assign fork_pc[0] = PROGADDR_RESET;
-     assign fork_rd[0] = 'b0;
-     assign fork_data[0] = 'b0;
-     assign fork_wen[0] = 0;
-     assign fork_ready[CORES_COUNT] = 0;
-     assign fork_cplt[CORES_COUNT] = 0;
-     
-     /* cascaded reset line */
-     wire iresetn[CORES_COUNT:0];
-     assign iresetn[0] = resetn;
-     
-     /* trap lines */
-     wire [CORES_COUNT-1:0] trap_cpu;
-     assign trap = |trap_cpu;
+	// chained connections
+	wire        int_resetn[0:CORES_COUNT];
+	wire        int_ready [0:CORES_COUNT];
+	wire        int_valid [0:CORES_COUNT];
+	wire [31:0] int_pc    [0:CORES_COUNT];
+	wire        int_cplt  [0:CORES_COUNT];
+	wire [ 4:0] int_rd    [0:CORES_COUNT];
+	wire [31:0] int_data  [0:CORES_COUNT];
+	wire        int_wen   [0:CORES_COUNT];
+	// chain boundaries assignments
+	assign int_resetn[0]           = resetn;
+	assign int_ready [CORES_COUNT] = 0;
+	assign int_valid [0]           = 1;
+	assign int_pc    [0]           = 0;
+	assign int_cplt  [CORES_COUNT] = 0;
+	assign int_rd    [0]           = 0;
+	assign int_data  [0]           = 'bx;
+	assign int_wen   [0]           = 0;
+	assign trap = int_cplt[0];
+	
+	// DMA signals
+	wire [CORES_COUNT-1:0] dma_req;
+	wire [CORES_COUNT-1:0] dma_done;
     
     generate
-        for (i = 0; i < CORES_COUNT; i++) begin: picorv32_cores
+        for (i = 0; i < CORES_COUNT; i++) begin
             picorv32 #(
                 .ENABLE_COUNTERS     (ENABLE_COUNTERS     ),
                 .ENABLE_COUNTERS64   (ENABLE_COUNTERS64   ),
@@ -155,9 +155,9 @@ module picodevice #(
                 .CORE_ID             (i                   ),
                 .ENABLE_FORK         (1                   )
             ) core (
-                .clk      (clk         ),
-                .resetn   (iresetn[i]  ),
-                .trap     (trap_cpu[i] ),
+                .clk      (clk          ),
+                .resetn   (int_resetn[i]),
+                .trap     (int_cplt[i]  ),
         
                 .mem_valid(mem_valid_cpu2trans[i]),
                 .mem_addr (mem_addr_cpu2trans [i]),
@@ -170,33 +170,30 @@ module picodevice #(
                 .irq(irq_cpu[i]),
                 .eoi(eoi_cpu[i]),
                 
-                .fork_resetn_o(iresetn[i+1]   ),
-                .fork_ready_o (fork_ready[i]  ),
-                .fork_valid_i (fork_valid[i]  ),
-                .fork_pc_i    (fork_pc[i]     ),
-                .fork_rd_i    (fork_rd[i]     ),
-                .fork_data_i  (fork_data[i]   ),
-                .fork_wen_i   (fork_wen[i]    ),
-                .fork_cplt_o  (fork_cplt[i]   ),
+                .child_resetn(int_resetn[i+1]),
+                .child_ready (int_ready[i+1] ),
+                .child_valid (int_valid[i+1] ),
+                .child_pc    (int_pc[i+1]    ),
+                .child_rd    (int_rd[i+1]    ),
+                .child_data  (int_data[i+1]  ),
+                .child_wen   (int_wen[i+1]   ),
+                .child_cplt  (int_cplt[i+1]  ),
+				
+				.fork_dma_req (dma_req[i] ),
+				.fork_dma_done(dma_done[i]),
                 
-                .fork_ready_i (fork_ready[i+1]),
-                .fork_valid_o (fork_valid[i+1]),
-                .fork_pc_o    (fork_pc[i+1]   ),
-                .fork_rd_o    (fork_rd[i+1]   ),
-                .fork_data_o  (fork_data[i+1] ),
-                .fork_wen_o   (fork_wen[i+1]  ),
-                .fork_cplt_i  (fork_cplt[i+1] ),
+                .init_ready(int_ready[i]),
+                .init_valid(int_valid[i]),
+                .init_pc   (int_pc[i]   ),
+                .init_rd   (int_rd[i]   ),
+                .init_data (int_data[i] ),
+				.init_wen  (int_wen[i]  ),
         
                 .trace_valid(trace_valid[i]),
                 .trace_data (trace_data [i])
             );
-        end
-    endgenerate
-    
-    /* memory address translators */
-    generate
-        for (i = 0; i < CORES_COUNT; i++) begin
-            picorv32_mem_translator #(
+        
+			picorv32_mem_translator #(
                 .PRIVATE_MEM_START(PRIVATE_MEM_BASE + (PRIVATE_MEM_OFFS * i))
             ) translator (
                 .clk(clk), .resetn(resetn),
@@ -215,7 +212,7 @@ module picodevice #(
                 .mem_wstrb_o(mem_wstrb_trans2arb[i]),
                 .mem_rdata_i(mem_rdata_trans2arb[i])
             );
-        end
+		end
     endgenerate
     
     /* memory arbiter and resolver */
@@ -420,102 +417,3 @@ module picorv32_mem_arbiter #(
 endmodule
 
 
-module picorv32_unit #(
-    parameter [ 0:0] ENABLE_COUNTERS = 1,
-	parameter [ 0:0] ENABLE_COUNTERS64 = 1,
-	parameter [ 0:0] ENABLE_REGS_16_31 = 1,
-	parameter [ 0:0] ENABLE_REGS_DUALPORT = 1,
-	parameter [ 0:0] LATCHED_MEM_RDATA = 0,
-	parameter [ 0:0] TWO_STAGE_SHIFT = 1,
-	parameter [ 0:0] BARREL_SHIFTER = 0,
-	parameter [ 0:0] TWO_CYCLE_COMPARE = 0,
-	parameter [ 0:0] TWO_CYCLE_ALU = 0,
-	parameter [ 0:0] COMPRESSED_ISA = 0,
-	parameter [ 0:0] CATCH_MISALIGN = 1,
-	parameter [ 0:0] CATCH_ILLINSN = 1,
-	parameter [ 0:0] ENABLE_PCPI = 0,
-	parameter [ 0:0] ENABLE_MUL = 0,
-	parameter [ 0:0] ENABLE_FAST_MUL = 1,
-	parameter [ 0:0] ENABLE_DIV = 1,
-	parameter [ 0:0] ENABLE_IRQ = 1,
-	parameter [ 0:0] ENABLE_IRQ_QREGS = 1,
-	parameter [ 0:0] ENABLE_IRQ_TIMER = 1,
-	parameter [ 0:0] ENABLE_TRACE = 0,
-	parameter [ 0:0] REGS_INIT_ZERO = 0,
-	parameter [31:0] MASKED_IRQ = 32'h 0000_0000,
-	parameter [31:0] LATCHED_IRQ = 32'h ffff_ffff,
-	parameter [31:0] PROGADDR_RESET = 32'h 0000_0000,
-	parameter [31:0] PROGADDR_IRQ = 32'h 0000_0010,
-	parameter [31:0] STACKADDR = 32'h ffff_ffff,
-	parameter [31:0] CORE_ID = 32'h 1234_8765
-) (
-    input clk, resetn,
-	output trap,
-
-	// native memory interface
-	output reg        mem_valid,
-    output reg        mem_instr,
-    input             mem_ready,
-    
-    output reg [31:0] mem_addr,
-    output reg [31:0] mem_wdata,
-    output reg [ 3:0] mem_wstrb,
-    input      [31:0] mem_rdata,
-	
-	// IRQ interface
-	input  [15:0] irq,
-	output [15:0] eoi,
-
-	// trace interface
-	output        trace_valid,
-	output [35:0] trace_data
-);
-    wire [31:0] irq_cpu;
-    /* core */
-    picorv32 #(
-        .ENABLE_COUNTERS     (ENABLE_COUNTERS     ),
-        .ENABLE_COUNTERS64   (ENABLE_COUNTERS64   ),
-        .ENABLE_REGS_16_31   (ENABLE_REGS_16_31   ),
-        .ENABLE_REGS_DUALPORT(ENABLE_REGS_DUALPORT),
-        .TWO_STAGE_SHIFT     (TWO_STAGE_SHIFT     ),
-        .BARREL_SHIFTER      (BARREL_SHIFTER      ),
-        .TWO_CYCLE_COMPARE   (TWO_CYCLE_COMPARE   ),
-        .TWO_CYCLE_ALU       (TWO_CYCLE_ALU       ),
-        .COMPRESSED_ISA      (COMPRESSED_ISA      ),
-        .CATCH_MISALIGN      (CATCH_MISALIGN      ),
-        .CATCH_ILLINSN       (CATCH_ILLINSN       ),
-        .ENABLE_PCPI         (ENABLE_PCPI         ),
-        .ENABLE_MUL          (ENABLE_MUL          ),
-        .ENABLE_FAST_MUL     (ENABLE_FAST_MUL     ),
-        .ENABLE_DIV          (ENABLE_DIV          ),
-        .ENABLE_IRQ          (ENABLE_IRQ          ),
-        .ENABLE_IRQ_QREGS    (ENABLE_IRQ_QREGS    ),
-        .ENABLE_IRQ_TIMER    (ENABLE_IRQ_TIMER    ),
-        .ENABLE_TRACE        (ENABLE_TRACE        ),
-        .REGS_INIT_ZERO      (REGS_INIT_ZERO      ),
-        .MASKED_IRQ          (MASKED_IRQ          ),
-        .LATCHED_IRQ         (LATCHED_IRQ         ),
-        .PROGADDR_RESET      (PROGADDR_RESET      ),
-        .PROGADDR_IRQ        (PROGADDR_IRQ        ),
-        .STACKADDR           (STACKADDR           ),
-        .CORE_ID             (CORE_ID             )
-    ) core0 (
-        .clk      (clk   ),
-        .resetn   (resetn),
-        .trap     (trap  ),
-
-        .mem_valid(mem_valid_cpu2trans),
-        .mem_addr (mem_addr_cpu2trans ),
-        .mem_wdata(mem_wdata_cpu2trans),
-        .mem_wstrb(mem_wstrb_cpu2trans),
-        .mem_instr(mem_instr_cpu2trans),
-        .mem_ready(mem_ready_cpu2trans),
-        .mem_rdata(mem_rdata_cpu2trans),
-    
-        .irq(irq_cpu),
-        .eoi(eoi_cpu),
-    
-        .trace_valid(trace_valid),
-        .trace_data (trace_data )
-        );
-endmodule
