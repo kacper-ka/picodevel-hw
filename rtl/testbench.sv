@@ -11,7 +11,7 @@
 module testbench #(
 	parameter AXI_TEST = 0,
 	parameter VERBOSE = 0,
-	parameter CORES_COUNT = 1
+	parameter CORES_COUNT = 2
 );
 	reg clk = 1;
 	reg resetn = 0;
@@ -29,7 +29,8 @@ module testbench #(
 			$dumpfile("testbench.vcd");
 			$dumpvars(0, testbench);
 		end
-		repeat (1000000) @(posedge clk);
+		//repeat (10000000) @(posedge clk);
+		#100ms;
 		$display("TIMEOUT");
 		$finish;
 	end
@@ -61,8 +62,9 @@ module testbench #(
     endgenerate
 
 	picodevice_tb_wrapper #(
-		.AXI_TEST (AXI_TEST),
-		.VERBOSE  (VERBOSE)
+		.AXI_TEST   (AXI_TEST   ),
+		.VERBOSE    (VERBOSE    ),
+		.CORES_COUNT(CORES_COUNT)
 	) top (
 		.clk(clk),
 		.resetn(resetn),
@@ -113,7 +115,10 @@ module picodevice_tb_wrapper #(
 	wire        mem_axi_rvalid;
 	wire        mem_axi_rready;
 	wire [31:0] mem_axi_rdata;
-
+	
+	// ---
+	
+	
 	axi4_memory #(
 		.AXI_TEST (AXI_TEST),
 		.VERBOSE  (VERBOSE)
@@ -145,9 +150,8 @@ module picodevice_tb_wrapper #(
 	);
 	
 	
-	
 
-	picodevice #(
+	picodevice_single_axi #(
 		.ENABLE_TRACE(1          ),
 		.CORES_COUNT (CORES_COUNT)
 	) uut (
@@ -171,6 +175,7 @@ module picodevice_tb_wrapper #(
 		.mem_axi_rvalid (mem_axi_rvalid ),
 		.mem_axi_rready (mem_axi_rready ),
 		.mem_axi_rdata  (mem_axi_rdata  ),
+		
 		.irq            (irq            ),
 		.eoi            (               ),
 		.trace_valid    (trace_valid    ),
@@ -672,3 +677,122 @@ module tb_picorv32_pcpi_fork ();
 
 endmodule
 
+
+
+module tb_picorv32_dmm ();
+	localparam int CORES_COUNT = 4;
+	
+	reg clk, resetn;
+	
+	reg  [CORES_COUNT-1:0] dmm_request;
+	wire [CORES_COUNT-1:0] dmm_done;
+	wire dmm_done_any = |dmm_done;
+	
+	wire        mem_valid;
+	reg         mem_ready;
+	wire [31:0] mem_addr;
+	wire [31:0] mem_wdata;
+	wire [ 3:0] mem_wstrb;
+	reg  [31:0] mem_rdata;
+	reg         mem_wait, mem_wait_q;
+	
+	initial begin
+		clk = 0;
+		resetn = 0;
+		dmm_request = 0;
+		
+		#10us;
+		$display("TIMEOUT");
+		$finish;
+	end
+	
+	always #5ns clk = ~clk;
+	
+	always @* begin
+		reg mem_wait, mem_wait_done;
+		
+		mem_ready = 0;
+		mem_rdata = 'bx;
+		mem_wait = 0;
+		mem_wait_done = 0;
+		
+		//@(posedge resetn);
+		
+		while (resetn) begin
+			@(posedge clk);
+			if (mem_valid) begin
+				mem_rdata = {16'h1234, mem_addr[15:0]};
+				if (!mem_wait_done) begin
+					if (!mem_wait) begin
+						mem_wait = 1;
+						//@(posedge clk);
+					end else begin
+						mem_wait = 0;
+						mem_wait_done = 1;
+						//@(posedge clk);
+					end
+				end else begin
+					mem_ready = 1;
+				end
+			end else begin
+				mem_ready = 0;
+				mem_rdata = 'bx;
+				mem_wait = 0;
+				mem_wait_done = 0;
+			end
+		end
+	end
+
+	picorv32_dmm #(
+		.CORES_COUNT      (CORES_COUNT),
+		.PRIVATE_MEM_START(0          ),
+		.PRIVATE_MEM_LEN  (16         )
+	) dut (
+		.clk(clk), .resetn(resetn),
+		.dmm_request(dmm_request),
+		.dmm_done   (dmm_done   ),
+		.mem_valid(mem_valid),
+		.mem_ready(mem_ready),
+		.mem_addr (mem_addr ),
+		.mem_wdata(mem_wdata),
+		.mem_wstrb(mem_wstrb),
+		.mem_rdata(mem_rdata)
+	);
+	
+	
+	initial begin
+		$monitor("TIME = %g DMM_REQ = %b DMM_DONE = %b", $time, dmm_request, dmm_done);
+		#100ns;
+		resetn = 1;
+		#50ns;
+		
+		$display("TEST 1");
+		for (int i = 0; i < CORES_COUNT; i++) begin
+			dmm_request[i] = 1;
+			@(posedge dmm_done[i]);
+			#50ns dmm_request[i] = 0;
+			#50ns;
+		end
+		
+		$display("TEST 2");
+		for (int i = 0; i < CORES_COUNT; i++) begin
+			dmm_request[i] = 1;
+			for (int i = 0; i < 5; i++)
+				@(posedge clk);
+			dmm_request[i] = 0;
+			@(posedge dmm_done[i]);
+			#50ns;
+		end
+		
+		$display("TEST 3");
+		dmm_request = {CORES_COUNT{1'b1}};
+		@(posedge &dmm_done);
+		#50ns;
+		dmm_request = 0;
+		
+		#100;
+		$display("TESTS DONE");
+		$finish;
+	end
+
+endmodule

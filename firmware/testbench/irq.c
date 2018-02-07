@@ -132,6 +132,11 @@ uint32_t *irq(uint32_t *regs, uint32_t irqs)
 		print_dec(timer_irq_count);
 		print_str("\n");
 
+        print_str("COREID = ");
+        print_hex(__get_COREID(), 8);
+        print_str("\n");
+        if (__get_COREID() != 0)
+            __EXIT();
 		__asm__ volatile ("ebreak");
 	}
 

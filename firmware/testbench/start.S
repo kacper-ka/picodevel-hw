@@ -45,6 +45,8 @@
 
 reset_vec:
 _start:
+	jal ra,__init_data__
+    jal ra,__init_bss__
     j start
 	// no more than 16 bytes here !
     //picorv32_getcid_insn(x1)
@@ -335,35 +337,25 @@ irq_vec:
 
 	picorv32_retirq_insn()
 
-#ifndef ENABLE_QREGS
-.balign 0x200
-#endif
-irq_regs:
-	// registers are saved to this memory region during interrupt handling
-	// the program counter is saved as register 0
-	.fill 32,4
 
-	// stack for the interrupt handler
-	.fill 128,4
-irq_stack:
     
 
 /* Main program
  **********************************/
 
 start:
-	lui x2,%hi(0xFFFFFFFF)
-	addi x2,x2,%lo(0xFFFFFFFF)
-	picorv32_fork_insn(x1)
-1:	beq x1,zero,2f // jump to join if fork successful
+	addi x2,zero,-1
+1:	picorv32_fork_insn(x1)
+	beq x1,zero,2f // jump to join if fork successful
 	beq x1,x2,3f // jump to epilogue if fork failed
 	jal zero,1b // newly spawned process jumps to fork
+
 2:	picorv32_join_insn()
-3:	picorv32_coreid_insn(x1) // load coreid
-	beq x1,zero,4f // topmost core, continue execution
-	picorv32_exit_insn()
-	nop
-4:	picorv32_waitirq_insn(zero)
+	jal zero,3f
+
+3:	addi x1,zero,1000
+	picorv32_timer_insn(zero,x1)
+	picorv32_waitirq_insn(zero)
 	picorv32_maskirq_insn(zero, zero)
 
 	/* zero-initialize all registers */
@@ -479,9 +471,6 @@ start:
 	lui gp, %hi(0xdeadbeef)
 	addi gp, gp, %lo(0xdeadbeef)
 	addi tp, gp, 0
-    
-    jal ra,__init_data__
-    jal ra,__init_bss__
 
 #ifdef ENABLE_SIEVE
 	/* call sieve C code */
@@ -549,6 +538,7 @@ outbyte:
 	bne	    a2,zero,1b
 	sb	    a0,UART_REG_FIFO(a1)
     ret
+	
 
 puts:
     addi    s1,ra,0
@@ -587,3 +577,15 @@ __init_bss__:
     bne     a0,a1,1b
     ret
     
+.section .bss
+#ifndef ENABLE_QREGS
+.balign 0x200
+#endif
+irq_regs:
+	// registers are saved to this memory region during interrupt handling
+	// the program counter is saved as register 0
+	.fill 32,4
+
+	// stack for the interrupt handler
+	.fill 128,4
+irq_stack:

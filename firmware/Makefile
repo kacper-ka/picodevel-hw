@@ -48,7 +48,13 @@ $(OBJ_DIRS): | $(BUILD_DIR)
 	mkdir -p $@
 
 .PHONY: firmware-testbench
-firmware-testbench: $(BUILD_DIR)/pico-testbench.elf $(BUILD_DIR)/pico-testbench.bin $(BUILD_DIR)/pico-testbench.hex
+firmware-testbench: $(BUILD_DIR)/pico-testbench.elf
+firmware-testbench: $(BUILD_DIR)/pico-testbench.bin
+firmware-testbench: $(BUILD_DIR)/pico-testbench.hex
+firmware-testbench: $(BUILD_DIR)/pico-testbench.disassembly
+
+$(BUILD_DIR)/pico-testbench.disassembly: $(BUILD_DIR)/pico-testbench.elf
+	$(TOOLCHAIN_PREFIX)objdump -xdsS $< > $@
 
 $(BUILD_DIR)/pico-testbench.hex: $(BUILD_DIR)/pico-testbench.bin makehex.py
 	python3 makehex.py $< 16384 > $@

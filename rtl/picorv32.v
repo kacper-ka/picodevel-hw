@@ -150,8 +150,8 @@ module picorv32 #(
 	output     [31:0] child_data,
 	output            child_wen,
 	// fork DMA request and completion signal
-	output            fork_dma_req,
-	input             fork_dma_done,
+	output            fork_dmm_req,
+	input             fork_dmm_done,
 
 	// Fork Interface, facing parent
 	output reg        init_ready,
@@ -358,8 +358,8 @@ module picorv32 #(
 			.child_rd    (child_rd       ),
 			.child_data  (child_data     ),
 			.child_wen   (child_wen      ),
-			.dma_req     (fork_dma_req   ),
-			.dma_done    (fork_dma_done  ),
+			.dmm_req     (fork_dmm_req   ),
+			.dmm_done    (fork_dmm_done  ),
 			.cpu_next_pc (next_pc        ),
 			.cpu_rs      (pcpi_fork_rs   ),
 			.cpu_data    (pcpi_fork_data )
@@ -375,7 +375,7 @@ module picorv32 #(
 		assign child_rd = 5'bx;
 		assign child_data = 32'bx;
 		assign child_wen = 0;
-		assign fork_dma_req = 0;
+		assign fork_dmm_req = 0;
 	end endgenerate
 
 	always @* begin
@@ -1374,13 +1374,17 @@ module picorv32 #(
 	reg [regindex_bits-1:0] demuxed_rs1;
 
 	always @* begin
+		pcpi_fork_data = cpuregs_rs1;
+	end
+	
+	always @* begin
 		cpuregs_write = 0;
 		cpuregs_wrdata = 'bx;
 
-		if (ENABLE_FORK && cpu_state == cpu_state_init) begin
-			cpuregs_wrdata = init_data;
-			cpuregs_write = init_wen;
-		end else
+		// if (ENABLE_FORK && cpu_state == cpu_state_init) begin
+			// cpuregs_wrdata = init_data;
+			// cpuregs_write = init_wen;
+		// end else
 		if (cpu_state == cpu_state_fetch) begin
 			(* parallel_case *)
 			case (1'b1)
@@ -1412,8 +1416,13 @@ module picorv32 #(
 
 `ifndef PICORV32_REGS
 	always @(posedge clk) begin
-		if (resetn && cpuregs_write && latched_rd) begin
-			cpuregs[latched_rd] <= cpuregs_wrdata;
+		if (resetn) begin
+			if (cpu_state == cpu_state_init && init_rd && init_wen) begin
+				cpuregs[init_rd] <= init_data;
+			end else
+			if (cpuregs_write && latched_rd) begin
+				cpuregs[latched_rd] <= cpuregs_wrdata;
+			end
 		end
 	end
 
@@ -1441,7 +1450,7 @@ module picorv32 #(
 	wire[31:0] cpuregs_rdata1;
 	wire[31:0] cpuregs_rdata2;
 
-	wire [5:0] cpuregs_waddr = latched_rd;
+	reg  [5:0] cpuregs_waddr;
 	wire [5:0] cpuregs_raddr1 = ENABLE_REGS_DUALPORT ? demuxed_rs1 : decoded_rs;
 	wire [5:0] cpuregs_raddr2 = ENABLE_REGS_DUALPORT ? decoded_rs2 : 0;
 
@@ -1457,6 +1466,8 @@ module picorv32 #(
 	);
 
 	always @* begin
+		cpuregs_waddr = (cpu_state == cpu_state_init) ? init_rd : latched_rd;
+		
 		decoded_rs = 'bx;
 		if (ENABLE_REGS_DUALPORT) begin
 			cpuregs_rs1 = demuxed_rs1 ? cpuregs_rdata1 : 0;
@@ -1576,7 +1587,7 @@ module picorv32 #(
 		case (cpu_state)
 			ENABLE_FORK && cpu_state_init: begin
 				init_ready <= 1;
-				latched_rd <= init_rd;
+				// latched_rd <= init_rd;
 				
 				if (init_valid) begin
 					reg_pc <= init_pc;
@@ -2642,8 +2653,8 @@ endmodule
 	output reg [31:0] child_data,
 	output reg        child_wen,
 	
-	output reg        dma_req,
-	input             dma_done,
+	output reg        dmm_req,
+	input             dmm_done,
 	
 	input      [31:0] cpu_next_pc,
 	output reg [ 4:0] cpu_rs,
@@ -2693,7 +2704,7 @@ endmodule
 		pcpi_ready <= 0;
 		pcpi_rd <= 'bx;
 		
-		if (instr_finish && instr_fork) begin
+		if (instr_finish) begin
 			pcpi_ready <= 1;
 			if (instr_fork) begin
 				pcpi_rd <= fork_result;
@@ -2734,7 +2745,7 @@ endmodule
 			fork_result <= 'bx;
 			fork_fsm_state <= 0;
 			cpu_rs <= 0;
-			dma_req <= 0;
+			dmm_req <= 0;
 			child_pc <= 'bx;
 			child_rd <= 'bx;
 		end else if (start && instr_fork) begin
@@ -2752,7 +2763,7 @@ endmodule
 					if (child_ready) begin
 						fork_result <= 0;
 						fork_fsm_state <= 3'b010;
-						dma_req <= 1;
+						dmm_req <= 1;
 						cpu_rs <= ENABLE_REGS_16_31 ? 31 : 15;
 					end else if (fork_timeout) begin
 						fork_result <= -32'd1;
@@ -2768,9 +2779,9 @@ endmodule
 						cpu_rs <= cpu_rs - 1;
 					end else begin
 						child_rd <= latched_rd;
-						if (dma_done) begin
+						if (dmm_done) begin
 							fork_fsm_state <= 3'b100;
-							dma_req <= 0;
+							dmm_req <= 0;
 							child_pc <= cpu_next_pc;
 							child_valid <= 1;
 						end

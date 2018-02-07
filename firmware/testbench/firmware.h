@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "../custom_ops.h"
 
 typedef uint32_t u32;
 typedef uint16_t u16;
@@ -39,5 +40,7 @@ void multest(void);
 
 // stats.c
 void stats(void);
+
+
 
 #endif
