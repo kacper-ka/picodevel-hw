@@ -22,7 +22,7 @@ TEST_FUNC_NAME:				        \
 .test_name:				            \
 	.ascii TEST_FUNC_TXT;		    \
 	.byte 0x00;			            \
-	.balign 4;			            \
+	.balign 4, 0;		            \
 .prname_done:				        \
 	addi	a0,zero,'.';		    \
     jal     ra,outbyte;             \
