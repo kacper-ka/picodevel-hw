@@ -48,7 +48,7 @@ module picodevice #(
 	localparam [ 0:0] CATCH_MISALIGN = 1;
 	localparam [ 0:0] CATCH_ILLINSN = 1;
 	localparam [ 0:0] ENABLE_PCPI = 0;
-	localparam [ 0:0] ENABLE_MUL = 0;
+	localparam [ 0:0] ENABLE_MUL = 1;
 	localparam [ 0:0] ENABLE_FAST_MUL = 1;
 	localparam [ 0:0] ENABLE_DIV = 1;
 	localparam [ 0:0] ENABLE_IRQ = 1;
@@ -350,7 +350,8 @@ module picorv32_mem_arbiter #(
     output reg [ 3:0] mem_wstrb,
     input      [31:0] mem_rdata
 );
-	localparam indexbits = (CORES_COUNT > 1) ? clogb2(CORES_COUNT) : 1;
+	//localparam indexbits = (CORES_COUNT > 1) ? clogb2(CORES_COUNT) : 1;
+	localparam indexbits = $bits(CORES_COUNT);
     
 	reg [CORES_COUNT-1:0] core_mem_valid_q;
 	reg [CORES_COUNT-1:0] pending;
@@ -424,83 +425,6 @@ module picorv32_mem_arbiter #(
 		end
 	
 	end
-	
-	// always @(posedge clk) begin
-		// core_mem_ready <= 0;
-		// mem_valid <= 0;
-
-		// if (!resetn) begin
-			// latched_coreidx <= 0;
-			// claimed <= 0;
-			// for (int idx = 0; idx < CORES_COUNT; idx++)
-				// core_mem_rdata[idx] <= 'bx;
-			// mem_instr <= 0;
-			// mem_addr <= 'bx;
-			// mem_wdata <= 'bx;
-			// mem_wstrb <= 0;
-		// end else
-		// if (claimed) begin
-			// mem_instr <= core_mem_instr[latched_coreidx];
-			// mem_addr <= core_mem_addr[latched_coreidx];
-			// mem_wdata <= core_mem_wdata[latched_coreidx];
-			// mem_wstrb <= core_mem_wstrb[latched_coreidx];
-			// mem_valid <= core_mem_valid[latched_coreidx];
-			// core_mem_ready[latched_coreidx] <= mem_ready && core_mem_valid[latched_coreidx];
-			// if (mem_ready)
-				// core_mem_rdata[latched_coreidx] <= mem_rdata;
-			// if (!core_mem_valid[latched_coreidx]) begin
-				// claimed <= 0;
-			// end
-		// end else
-		// if (core_mem_valid_any) begin
-			// claimed <= 1;
-			// latched_coreidx <= coreidx;
-		// end
-	// end
-	
-//    generate
-//   if (CORES_COUNT == 1) begin
-//        assign mem_valid_o    = mem_valid_i[0];
-//        assign mem_instr_o    = mem_instr_i[0];
-//       assign mem_addr_o     = mem_addr_i [0];
-//        assign mem_wdata_o    = mem_wdata_i[0];
-//        assign mem_wstrb_o    = mem_wstrb_i[0];
-//        assign mem_ready_o[0] = mem_ready_i;
-//        assign mem_rdata_o[0] = mem_rdata_i;
-//    end else begin
-    
-//    end 
-//    endgenerate
-    
-//    reg [CORES_COUNT-1:0] onehot;
-//    wire anyone;
-//    assign anyone = |onehot;
-
-//    always @(posedge clk)
-//    begin
-//        if ((resetn == 0) || (anyone == 0)) begin
-//            mem_valid_o <= 0;
-//            mem_instr_o <= 1'bx;
-//            mem_addr_o  <= {32{1'bx}};
-//            mem_wdata_o <= {32{1'bx}};
-//            mem_wstrb_o <= {4{1'bx}};
-            
-//            for (int i = 0; i < (CORES_COUNT - 1); i++) begin
-//                mem_rdata_o[i] <= {32{1'bx}};
-//                mem_ready_o[i] <= 0;
-//            end
-//        end else begin
-//            for (int i = 0; i < (CORES_COUNT - 1); i++) begin
-//                if (onehot == (1 << i)) begin
-//                    mem_valid_o <= mem_valid_i[i];
-//                    mem_instr_o <= mem_instr_i[i];
-//                    mem_addr_o  <= mem_addr_i[i];
-//                    mem_wdata_o <= mem_wdata_i[i];
-//                    mem_wstrb_o <= mem_wstrb_i[i];
-//                end
-//            end
-//        end
-//    end
 
 endmodule
 
@@ -524,7 +448,8 @@ module picorv32_dmm #(
     output     [ 3:0] mem_wstrb,
     input      [31:0] mem_rdata
 );
-	localparam indexbits = clogb2(CORES_COUNT);
+	//localparam indexbits = clogb2(CORES_COUNT);
+	localparam indexbits = $bits(CORES_COUNT);
 	
 	genvar i;
 	
@@ -714,21 +639,14 @@ module picorv32_mem_mover (
 endmodule
 
 
-function integer clogb2;
-	input [31:0] value;
-	integer 	i;
-	begin
-		clogb2 = 0;
-		for(i = 0; 2**i < value; i = i + 1)
-			clogb2 = i + 1;
-	end
-endfunction
-
 
 
 module picodevice_axi #(
 	parameter [ 0:0] ENABLE_TRACE = 0,
-	parameter        CORES_COUNT = 1
+	parameter        CORES_COUNT = 1,
+	parameter [31:0] PRIVATE_MEM_BASE = 32'h0001_0000,
+	parameter [31:0] PRIVATE_MEM_OFFS = 32'h0001_0000,
+	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100
 ) (
 	input clk, resetn,
 	output trap,
@@ -798,8 +716,11 @@ module picodevice_axi #(
 	wire [31:0] mem_addr, mem_wdata, mem_rdata, dmm_mem_addr, dmm_mem_wdata, dmm_mem_rdata;
 
 	picodevice #(
-		.ENABLE_TRACE(ENABLE_TRACE),
-		.CORES_COUNT (CORES_COUNT )
+		.ENABLE_TRACE    (ENABLE_TRACE    ),
+		.CORES_COUNT     (CORES_COUNT     ),
+		.PRIVATE_MEM_BASE(PRIVATE_MEM_BASE),
+		.PRIVATE_MEM_OFFS(PRIVATE_MEM_OFFS),
+		.PRIVATE_MEM_LEN (PRIVATE_MEM_LEN )
 	) core (
 		.clk(clk), .resetn(resetn),
 		.trap(trap),
@@ -889,7 +810,10 @@ endmodule
 
 module picodevice_single #(
 	parameter [ 0:0] ENABLE_TRACE = 0,
-	parameter        CORES_COUNT = 1
+	parameter        CORES_COUNT = 1,
+	parameter [31:0] PRIVATE_MEM_BASE = 32'h0001_0000,
+	parameter [31:0] PRIVATE_MEM_OFFS = 32'h0001_0000,
+	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100
 ) (
 	input clk, resetn,
 	output trap,
@@ -918,8 +842,11 @@ module picodevice_single #(
 	assign int_mem_instr[1] = 0;
 
 	picodevice #(
-		.ENABLE_TRACE(ENABLE_TRACE),
-		.CORES_COUNT (CORES_COUNT )
+		.ENABLE_TRACE    (ENABLE_TRACE    ),
+		.CORES_COUNT     (CORES_COUNT     ),
+		.PRIVATE_MEM_BASE(PRIVATE_MEM_BASE),
+		.PRIVATE_MEM_OFFS(PRIVATE_MEM_OFFS),
+		.PRIVATE_MEM_LEN (PRIVATE_MEM_LEN )
 	) core (
 		.clk(clk), .resetn(resetn),
 		.trap(trap),
@@ -972,7 +899,10 @@ endmodule
 
 module picodevice_single_axi #(
 	parameter [ 0:0] ENABLE_TRACE = 0,
-	parameter        CORES_COUNT = 1
+	parameter        CORES_COUNT = 1,
+	parameter [31:0] PRIVATE_MEM_BASE = 32'h0001_0000,
+	parameter [31:0] PRIVATE_MEM_OFFS = 32'h0001_0000,
+	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100
 ) (
 	input clk, resetn,
 	output trap,
@@ -1015,8 +945,11 @@ module picodevice_single_axi #(
 	wire [31:0] mem_addr, mem_wdata, mem_rdata;
 	
 	picodevice_single #(
-		.ENABLE_TRACE(ENABLE_TRACE),
-		.CORES_COUNT (CORES_COUNT )
+		.ENABLE_TRACE    (ENABLE_TRACE    ),
+		.CORES_COUNT     (CORES_COUNT     ),
+		.PRIVATE_MEM_BASE(PRIVATE_MEM_BASE),
+		.PRIVATE_MEM_OFFS(PRIVATE_MEM_OFFS),
+		.PRIVATE_MEM_LEN (PRIVATE_MEM_LEN )
 	) core (
 		.clk(clk), .resetn(resetn),
 		.trap(trap),

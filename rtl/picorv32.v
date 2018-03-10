@@ -82,7 +82,7 @@ module picorv32 #(
 	parameter [31:0] PROGADDR_IRQ = 32'h 0000_0010,
 	parameter [31:0] STACKADDR = 32'h ffff_ffff,
 	parameter [31:0] CORE_ID = 32'h 1234_8765,
-	parameter [ 0:0] ENABLE_FORK = 1
+	parameter [ 0:0] ENABLE_FORK = 0
 ) (
 	input clk, resetn,
 	output reg trap,
@@ -2843,7 +2843,9 @@ module picorv32_axi #(
 	parameter [31:0] LATCHED_IRQ = 32'h ffff_ffff,
 	parameter [31:0] PROGADDR_RESET = 32'h 0000_0000,
 	parameter [31:0] PROGADDR_IRQ = 32'h 0000_0010,
-	parameter [31:0] STACKADDR = 32'h ffff_ffff
+	parameter [31:0] STACKADDR = 32'h ffff_ffff,
+	parameter [31:0] CORE_ID = 32'h 1234_8765,
+	parameter [ 0:0] ENABLE_FORK = 0
 ) (
 	input clk, resetn,
 	output trap,
@@ -2974,7 +2976,9 @@ module picorv32_axi #(
 		.LATCHED_IRQ         (LATCHED_IRQ         ),
 		.PROGADDR_RESET      (PROGADDR_RESET      ),
 		.PROGADDR_IRQ        (PROGADDR_IRQ        ),
-		.STACKADDR           (STACKADDR           )
+		.STACKADDR           (STACKADDR           ),
+		.CORE_ID             (CORE_ID             ),
+		.ENABLE_FORK         (ENABLE_FORK         )
 	) picorv32_core (
 		.clk      (clk   ),
 		.resetn   (resetn),
@@ -3141,7 +3145,9 @@ module picorv32_wb #(
 	parameter [31:0] LATCHED_IRQ = 32'h ffff_ffff,
 	parameter [31:0] PROGADDR_RESET = 32'h 0000_0000,
 	parameter [31:0] PROGADDR_IRQ = 32'h 0000_0010,
-	parameter [31:0] STACKADDR = 32'h ffff_ffff
+	parameter [31:0] STACKADDR = 32'h ffff_ffff,
+	parameter [31:0] CORE_ID = 32'h 1234_8765,
+	parameter [ 0:0] ENABLE_FORK = 0
 ) (
 	output trap,
 
@@ -3238,7 +3244,9 @@ module picorv32_wb #(
 		.LATCHED_IRQ         (LATCHED_IRQ         ),
 		.PROGADDR_RESET      (PROGADDR_RESET      ),
 		.PROGADDR_IRQ        (PROGADDR_IRQ        ),
-		.STACKADDR           (STACKADDR           )
+		.STACKADDR           (STACKADDR           ),
+		.CORE_ID             (CORE_ID             ),
+		.ENABLE_FORK         (ENABLE_FORK         )
 	) picorv32_core (
 		.clk      (clk   ),
 		.resetn   (resetn),
