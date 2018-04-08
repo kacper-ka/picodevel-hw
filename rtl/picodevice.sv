@@ -6,7 +6,9 @@ module picodevice #(
 	parameter        CORES_COUNT = 1,
 	parameter [31:0] PRIVATE_MEM_BASE = 32'h0001_0000,
 	parameter [31:0] PRIVATE_MEM_OFFS = 32'h0001_0000,
-	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100
+	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100,
+	parameter [31:0] PROGADDR_RESET = 32'h0000_0000,
+	parameter [31:0] PROGADDR_IRQ = 32'h0000_0010
 ) (
     input clk, resetn,
 	output trap,
@@ -57,8 +59,6 @@ module picodevice #(
 	localparam [ 0:0] REGS_INIT_ZERO = 0;
 	localparam [31:0] MASKED_IRQ = 32'h 0000_0000;
 	localparam [31:0] LATCHED_IRQ = 32'h ffff_ffff;
-	localparam [31:0] PROGADDR_RESET = 32'h 0000_0000;
-	localparam [31:0] PROGADDR_IRQ = 32'h 0000_0010;
 	localparam [31:0] STACKADDR = 32'h ffff_ffff;
 	
 	genvar i;
@@ -73,9 +73,9 @@ module picodevice #(
 	wire [31:0] cpu2trans_mem_rdata[CORES_COUNT-1:0];
 	
 	/* translated memory interface */
-	wire [CORES_COUNT-1:0] trans2arb_mem_valid;
+	(* mark_debug = "true" *) wire [CORES_COUNT-1:0] trans2arb_mem_valid;
 	wire [CORES_COUNT-1:0] trans2arb_mem_instr;
-    wire [CORES_COUNT-1:0] trans2arb_mem_ready;
+    (* mark_debug = "true" *) wire [CORES_COUNT-1:0] trans2arb_mem_ready;
     wire [31:0] trans2arb_mem_addr [CORES_COUNT-1:0];
     wire [31:0] trans2arb_mem_wdata[CORES_COUNT-1:0];
     wire [ 3:0] trans2arb_mem_wstrb[CORES_COUNT-1:0];
@@ -124,7 +124,7 @@ module picodevice #(
 	wire [CORES_COUNT-1:0] dmm_done;
 	
     generate
-        for (i = 0; i < CORES_COUNT; i++) begin
+        for (i = 0; i < CORES_COUNT; i++) begin : GEN_CORE
             picorv32 #(
                 .ENABLE_COUNTERS     (ENABLE_COUNTERS     ),
                 .ENABLE_COUNTERS64   (ENABLE_COUNTERS64   ),
@@ -646,7 +646,9 @@ module picodevice_axi #(
 	parameter        CORES_COUNT = 1,
 	parameter [31:0] PRIVATE_MEM_BASE = 32'h0001_0000,
 	parameter [31:0] PRIVATE_MEM_OFFS = 32'h0001_0000,
-	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100
+	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100,
+	parameter [31:0] PROGADDR_RESET = 32'h0000_0000,
+	parameter [31:0] PROGADDR_IRQ = 32'h0000_0010
 ) (
 	input clk, resetn,
 	output trap,
@@ -720,8 +722,10 @@ module picodevice_axi #(
 		.CORES_COUNT     (CORES_COUNT     ),
 		.PRIVATE_MEM_BASE(PRIVATE_MEM_BASE),
 		.PRIVATE_MEM_OFFS(PRIVATE_MEM_OFFS),
-		.PRIVATE_MEM_LEN (PRIVATE_MEM_LEN )
-	) core (
+		.PRIVATE_MEM_LEN (PRIVATE_MEM_LEN ),
+		.PROGADDR_RESET  (PROGADDR_RESET  ),
+		.PROGADDR_IRQ    (PROGADDR_IRQ    )
+	) device (
 		.clk(clk), .resetn(resetn),
 		.trap(trap),
 
@@ -813,7 +817,9 @@ module picodevice_single #(
 	parameter        CORES_COUNT = 1,
 	parameter [31:0] PRIVATE_MEM_BASE = 32'h0001_0000,
 	parameter [31:0] PRIVATE_MEM_OFFS = 32'h0001_0000,
-	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100
+	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100,
+	parameter [31:0] PROGADDR_RESET = 32'h0000_0000,
+    parameter [31:0] PROGADDR_IRQ = 32'h0000_0010
 ) (
 	input clk, resetn,
 	output trap,
@@ -846,8 +852,10 @@ module picodevice_single #(
 		.CORES_COUNT     (CORES_COUNT     ),
 		.PRIVATE_MEM_BASE(PRIVATE_MEM_BASE),
 		.PRIVATE_MEM_OFFS(PRIVATE_MEM_OFFS),
-		.PRIVATE_MEM_LEN (PRIVATE_MEM_LEN )
-	) core (
+		.PRIVATE_MEM_LEN (PRIVATE_MEM_LEN ),
+		.PROGADDR_RESET  (PROGADDR_RESET  ),
+        .PROGADDR_IRQ    (PROGADDR_IRQ    )
+	) device (
 		.clk(clk), .resetn(resetn),
 		.trap(trap),
 
@@ -902,7 +910,9 @@ module picodevice_single_axi #(
 	parameter        CORES_COUNT = 1,
 	parameter [31:0] PRIVATE_MEM_BASE = 32'h0001_0000,
 	parameter [31:0] PRIVATE_MEM_OFFS = 32'h0001_0000,
-	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100
+	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100,
+	parameter [31:0] PROGADDR_RESET = 32'h0000_0000,
+    parameter [31:0] PROGADDR_IRQ = 32'h0000_0010
 ) (
 	input clk, resetn,
 	output trap,
@@ -949,8 +959,10 @@ module picodevice_single_axi #(
 		.CORES_COUNT     (CORES_COUNT     ),
 		.PRIVATE_MEM_BASE(PRIVATE_MEM_BASE),
 		.PRIVATE_MEM_OFFS(PRIVATE_MEM_OFFS),
-		.PRIVATE_MEM_LEN (PRIVATE_MEM_LEN )
-	) core (
+		.PRIVATE_MEM_LEN (PRIVATE_MEM_LEN ),
+		.PROGADDR_RESET  (PROGADDR_RESET  ),
+        .PROGADDR_IRQ    (PROGADDR_IRQ    )
+	) device_single (
 		.clk(clk), .resetn(resetn),
 		.trap(trap),
 

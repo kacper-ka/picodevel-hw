@@ -4,7 +4,9 @@ module picodevice_single_axi_wrapper #(
 	parameter        CORES_COUNT = 2,
 	parameter [31:0] PRIVATE_MEM_BASE = 32'h0001_0000,
 	parameter [31:0] PRIVATE_MEM_OFFS = 32'h0001_0000,
-	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100
+	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100,
+	parameter [31:0] PROGADDR_RESET = 32'h0000_0000,
+    parameter [31:0] PROGADDR_IRQ = 32'h0000_0010
 ) (
     input clk, resetn,
 	output trap,
@@ -43,7 +45,9 @@ module picodevice_single_axi_wrapper #(
         .CORES_COUNT     (CORES_COUNT     ),
         .PRIVATE_MEM_BASE(PRIVATE_MEM_BASE),
         .PRIVATE_MEM_OFFS(PRIVATE_MEM_OFFS),
-        .PRIVATE_MEM_LEN (PRIVATE_MEM_LEN )
+        .PRIVATE_MEM_LEN (PRIVATE_MEM_LEN ),
+        .PROGADDR_RESET  (PROGADDR_RESET  ),
+        .PROGADDR_IRQ    (PROGADDR_IRQ    )
     ) device (
         .clk(clk), .resetn(resetn),
         .trap(trap),
@@ -81,7 +85,9 @@ module picodevice_axi_wrapper #(
 	parameter        CORES_COUNT = 1,
 	parameter [31:0] PRIVATE_MEM_BASE = 32'h0001_0000,
 	parameter [31:0] PRIVATE_MEM_OFFS = 32'h0001_0000,
-	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100
+	parameter [31:0] PRIVATE_MEM_LEN = 32'h0000_0100,
+	parameter [31:0] PROGADDR_RESET = 32'h0000_0000,
+    parameter [31:0] PROGADDR_IRQ = 32'h0000_0010
 ) (
 	input clk, resetn,
 	output trap,
@@ -146,7 +152,9 @@ module picodevice_axi_wrapper #(
         .CORES_COUNT     (CORES_COUNT     ),
         .PRIVATE_MEM_BASE(PRIVATE_MEM_BASE),
         .PRIVATE_MEM_OFFS(PRIVATE_MEM_OFFS),
-        .PRIVATE_MEM_LEN (PRIVATE_MEM_LEN )
+        .PRIVATE_MEM_LEN (PRIVATE_MEM_LEN ),
+        .PROGADDR_RESET  (PROGADDR_RESET  ),
+        .PROGADDR_IRQ    (PROGADDR_IRQ    )
 	) device (
 		.clk(clk), .resetn(resetn),
 		.trap(trap),
