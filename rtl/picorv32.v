@@ -339,7 +339,10 @@ module picorv32 #(
 	end endgenerate
 	
 	generate if (ENABLE_FORK) begin
-		picorv32_pcpi_fork pcpi_fork (
+		picorv32_pcpi_fork #(
+            .ENABLE_REGS_16_31(ENABLE_REGS_16_31),
+            .CORE_ID          (CORE_ID          )
+		) pcpi_fork (
 			.clk         (clk            ),
 			.resetn      (resetn         ),
 			.pcpi_valid  (pcpi_valid     ),
@@ -1417,7 +1420,7 @@ module picorv32 #(
 `ifndef PICORV32_REGS
 	always @(posedge clk) begin
 		if (resetn) begin
-			if (cpu_state == cpu_state_init && init_rd && init_wen) begin
+			if (ENABLE_FORK && cpu_state == cpu_state_init && init_rd && init_wen) begin
 				cpuregs[init_rd] <= init_data;
 			end else
 			if (cpuregs_write && latched_rd) begin
@@ -1466,7 +1469,7 @@ module picorv32 #(
 	);
 
 	always @* begin
-		cpuregs_waddr = (cpu_state == cpu_state_init) ? init_rd : latched_rd;
+		cpuregs_waddr = (ENABLE_FORK && cpu_state == cpu_state_init) ? init_rd : latched_rd;
 		
 		decoded_rs = 'bx;
 		if (ENABLE_REGS_DUALPORT) begin
@@ -1593,6 +1596,7 @@ module picorv32 #(
 					reg_pc <= init_pc;
 					reg_next_pc <= init_pc;
 					reg_out <= CORE_ID;
+					latched_rd <= init_rd;
 					latched_store <= 1;
 					cpu_state <= cpu_state_fetch;
 					init_ready <= 0;
