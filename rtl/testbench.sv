@@ -10,18 +10,26 @@
 `ifndef VERILATOR
 module testbench #(
 	parameter AXI_TEST = 0,
-	parameter VERBOSE = 0,
-	parameter CORES_COUNT = 2
+	parameter VERBOSE = 0
 );
 	reg clk = 1;
-	reg resetn = 0;
-	wire trap;
+	reg [2:0] resetn = 0;
+	wire [2:0] trap;
+	wire [2:0] tests_passed;
+	wire all_tests_passed = &tests_passed;
+	wire all_trapped = &trap;
+	wire all_started = &resetn;
 
 	always #5 clk = ~clk;
 
 	initial begin
-		repeat (100) @(posedge clk);
-		resetn <= 1;
+        for (int i = 0; i < 3; i += 1) begin
+            repeat (100) @(posedge clk);
+            resetn[i] <= 1;
+            repeat (10) @(posedge clk);
+            while (!trap[i])
+                @(posedge clk);
+        end
 	end
 
 	initial begin
@@ -30,185 +38,58 @@ module testbench #(
 			$dumpvars(0, testbench);
 		end
 		//repeat (10000000) @(posedge clk);
-		#100ms;
+		#30s;
 		$display("TIMEOUT");
 		$finish;
 	end
 
-	wire trace_valid[CORES_COUNT-1:0];
-	wire [35:0] trace_data[CORES_COUNT-1:0];
-//	string trace_file_name[CORES_COUNT-1:0];
-	integer trace_file[CORES_COUNT-1:0];
-
-    genvar i;
-    generate
-    for (i = 0; i < CORES_COUNT; i = i + 1) begin
-        initial begin
-            string trace_file_name;
-            
-            trace_file_name = $sformatf("testbench.trace%1d", i);
-            $display("Opening %s", trace_file_name);
-            trace_file[i] = $fopen(trace_file_name, "w");
-            repeat (10) @(posedge clk);
-            while (!trap) begin
-                @(posedge clk);
-                if (trace_valid[i])
-                    $fwrite(trace_file[i], "%x\n", trace_data[i]);
+    integer cycle_counter;
+    always @(posedge clk) begin
+        cycle_counter <= resetn ? cycle_counter + 1 : 0;
+        if (all_started && all_trapped) begin
+            repeat (20) @(posedge clk);
+            $display("TRAP after %1d clock cycles", cycle_counter);
+            if (all_tests_passed) begin
+                $display("ALL TESTS PASSED.");
+                $finish;
+            end else begin
+                $display("ERROR!");
+                if ($test$plusargs("noerror"))
+                    $finish;
+                $stop;
             end
-            $fclose(trace_file[i]);
-            $display("Finished writing %s.", trace_file_name);        
         end
     end
-    endgenerate
-
-	picodevice_tb_wrapper #(
-		.AXI_TEST   (AXI_TEST   ),
-		.VERBOSE    (VERBOSE    ),
-		.CORES_COUNT(CORES_COUNT)
-	) top (
-		.clk(clk),
-		.resetn(resetn),
-		.trap(trap),
-		.trace_valid(trace_valid),
-		.trace_data(trace_data)
-	);
-endmodule
-`endif
-
-module picodevice_tb_wrapper #(
-	parameter AXI_TEST = 0,
-	parameter VERBOSE = 0,
-	parameter CORES_COUNT = 1
-) (
-	input clk,
-	input resetn,
-	output trap,
-	output trace_valid[CORES_COUNT-1:0],
-	output [35:0] trace_data[CORES_COUNT-1:0]
-);
-    integer cycle_counter;
-	wire tests_passed;
-	reg [15:0] irq;
     
-	always @* begin
-		irq = {14'h0, &cycle_counter[15:0], &cycle_counter[12:0]}; 
-	end
-
-	wire        mem_axi_awvalid;
-	wire        mem_axi_awready;
-	wire [31:0] mem_axi_awaddr;
-	wire [ 2:0] mem_axi_awprot;
-
-	wire        mem_axi_wvalid;
-	wire        mem_axi_wready;
-	wire [31:0] mem_axi_wdata;
-	wire [ 3:0] mem_axi_wstrb;
-
-	wire        mem_axi_bvalid;
-	wire        mem_axi_bready;
-
-	wire        mem_axi_arvalid;
-	wire        mem_axi_arready;
-	wire [31:0] mem_axi_araddr;
-	wire [ 2:0] mem_axi_arprot;
-
-	wire        mem_axi_rvalid;
-	wire        mem_axi_rready;
-	wire [31:0] mem_axi_rdata;
+    testbench_picorv32 #(
+        .AXI_TEST(AXI_TEST),
+        .VERBOSE (VERBOSE )
+    ) tb_picorv32 (
+        .clk(clk), .resetn(resetn[0]),
+        .trap(trap[0]), .tests_passed(tests_passed[0])
+    );
+    
+    testbench_picodev #(
+        .AXI_TEST   (AXI_TEST),
+        .VERBOSE    (VERBOSE ),
+        .CORES_COUNT(2       )
+    ) tb_picodev2 (
+        .clk(clk), .resetn(resetn[2]),
+        .trap(trap[2]), .tests_passed(tests_passed[2])
+    );
+    
+    testbench_picodev #(
+        .AXI_TEST   (AXI_TEST),
+        .VERBOSE    (VERBOSE ),
+        .CORES_COUNT(4       )
+    ) tb_picodev4 (
+        .clk(clk), .resetn(resetn[1]),
+        .trap(trap[1]), .tests_passed(tests_passed[1])
+    );
 	
-	// ---
-	
-	
-	axi4_memory #(
-		.AXI_TEST (AXI_TEST),
-		.VERBOSE  (VERBOSE)
-	) mem (
-		.clk             (clk             ),
-		.mem_axi_awvalid (mem_axi_awvalid ),
-		.mem_axi_awready (mem_axi_awready ),
-		.mem_axi_awaddr  (mem_axi_awaddr  ),
-		.mem_axi_awprot  (mem_axi_awprot  ),
-
-		.mem_axi_wvalid  (mem_axi_wvalid  ),
-		.mem_axi_wready  (mem_axi_wready  ),
-		.mem_axi_wdata   (mem_axi_wdata   ),
-		.mem_axi_wstrb   (mem_axi_wstrb   ),
-
-		.mem_axi_bvalid  (mem_axi_bvalid  ),
-		.mem_axi_bready  (mem_axi_bready  ),
-
-		.mem_axi_arvalid (mem_axi_arvalid ),
-		.mem_axi_arready (mem_axi_arready ),
-		.mem_axi_araddr  (mem_axi_araddr  ),
-		.mem_axi_arprot  (mem_axi_arprot  ),
-
-		.mem_axi_rvalid  (mem_axi_rvalid  ),
-		.mem_axi_rready  (mem_axi_rready  ),
-		.mem_axi_rdata   (mem_axi_rdata   ),
-
-		.tests_passed    (tests_passed    )
-	);
-	
-	
-
-	picodevice_single_axi #(
-		.ENABLE_TRACE(1          ),
-		.CORES_COUNT (CORES_COUNT)
-	) uut (
-		.clk            (clk            ),
-		.resetn         (resetn         ),
-		.trap           (trap           ),
-		.mem_axi_awvalid(mem_axi_awvalid),
-		.mem_axi_awready(mem_axi_awready),
-		.mem_axi_awaddr (mem_axi_awaddr ),
-		.mem_axi_awprot (mem_axi_awprot ),
-		.mem_axi_wvalid (mem_axi_wvalid ),
-		.mem_axi_wready (mem_axi_wready ),
-		.mem_axi_wdata  (mem_axi_wdata  ),
-		.mem_axi_wstrb  (mem_axi_wstrb  ),
-		.mem_axi_bvalid (mem_axi_bvalid ),
-		.mem_axi_bready (mem_axi_bready ),
-		.mem_axi_arvalid(mem_axi_arvalid),
-		.mem_axi_arready(mem_axi_arready),
-		.mem_axi_araddr (mem_axi_araddr ),
-		.mem_axi_arprot (mem_axi_arprot ),
-		.mem_axi_rvalid (mem_axi_rvalid ),
-		.mem_axi_rready (mem_axi_rready ),
-		.mem_axi_rdata  (mem_axi_rdata  ),
-		
-		.irq            (irq            ),
-		.eoi            (               ),
-		.trace_valid    (trace_valid    ),
-		.trace_data     (trace_data     )
-	);
-
-	reg [1023:0] firmware_file;
-	initial begin
-		if (!$value$plusargs("firmware=%s", firmware_file))
-			firmware_file = "D:/MGR/vivado-projects/pico-devel/repo/firmware/build/pico-testbench.hex";
-		$readmemh(firmware_file, mem.mem_ocm);
-	end
-
-	
-	always @(posedge clk) begin
-		cycle_counter <= resetn ? cycle_counter + 1 : 0;
-		if (resetn && trap) begin
-`ifndef VERILATOR
-			repeat (10) @(posedge clk);
-`endif
-			$display("TRAP after %1d clock cycles", cycle_counter);
-			if (tests_passed) begin
-				$display("ALL TESTS PASSED.");
-				$finish;
-			end else begin
-				$display("ERROR!");
-				if ($test$plusargs("noerror"))
-					$finish;
-				$stop;
-			end
-		end
-	end
 endmodule
+`endif
+
 
 module axi4_memory #(
 	parameter AXI_TEST = 0,
@@ -239,15 +120,27 @@ module axi4_memory #(
 
 	output reg tests_passed
 );
-	reg [31:0]   mem_ocm [0: 256*1024/4-1] /* verilator public */;
-	reg [31:0]   mem_ram [0:1024*1024/4-1] /* verilator public */;
+    localparam [31:0] MEM_OCM_BASE = 32'h0000_0000;
+    localparam [31:0] MEM_OCM_LEN = 32'h0003_0000;
+    localparam [31:0] MEM_DDR_BASE = 32'h0010_0000;
+    localparam [31:0] MEM_DDR_LEN = 32'h0010_0000;
+    localparam [31:0] MEM_UART_SR = 32'hE000_002C;
+    localparam [31:0] MEM_UART_FIFO = 32'hE000_0030;
+    localparam [31:0] MEM_LEDS_BASE = 32'h4120_0000;
+    
+	reg [31:0]   mem_ocm [0:MEM_OCM_LEN/4-1] /* verilator public */;
+	reg [31:0]   mem_ram [0:MEM_DDR_LEN/4-1] /* verilator public */;
+	reg [31:0]   leds;
 	reg verbose;
 	initial verbose = $test$plusargs("verbose") || VERBOSE;
 
 	reg axi_test;
 	initial axi_test = $test$plusargs("axi_test") || AXI_TEST;
 
-	initial tests_passed = 0;
+    initial mem_ram[0] = 0;
+    always @*
+        tests_passed = (mem_ram[0] == 123456789) && (leds != 0);
+    initial leds = 0;
 
 	reg [63:0] xorshift64_state = 64'd88172645463325252;
 
@@ -264,12 +157,12 @@ module axi4_memory #(
 	reg [4:0] async_axi_transaction = ~0;
 	reg [4:0] delay_axi_transaction = 0;
 
-	always @(posedge clk) begin
-		if (axi_test) begin
-				xorshift64_next;
-				{fast_axi_transaction, async_axi_transaction, delay_axi_transaction} <= xorshift64_state;
-		end
-	end
+	//always @(posedge clk) begin
+	//	if (axi_test) begin
+	//			xorshift64_next;
+	//			{fast_axi_transaction, async_axi_transaction, delay_axi_transaction} <= xorshift64_state;
+	//	end
+	//end
 
 	reg latched_raddr_en = 0;
 	reg latched_waddr_en = 0;
@@ -311,21 +204,27 @@ module axi4_memory #(
 	task handle_axi_rvalid; begin
 		if (verbose)
 			$display("RD: ADDR=%08x %s", latched_raddr, latched_rinsn ? " INSN" : "");
-		if (latched_raddr < 256*1024) begin
+		if (latched_raddr >= MEM_OCM_BASE && latched_raddr < (MEM_OCM_BASE + MEM_OCM_LEN)) begin
             // OCM access
-			mem_axi_rdata <= mem_ocm[latched_raddr >> 2];
+			mem_axi_rdata <= mem_ocm[(latched_raddr - MEM_OCM_BASE) >> 2];
 			mem_axi_rvalid <= 1;
 			latched_raddr_en = 0;
         end else
-        if (latched_raddr >= 32'h0010_0000 && latched_raddr < 32'h0020_0000) begin
+        if (latched_raddr >= MEM_DDR_BASE && latched_raddr < (MEM_DDR_BASE + MEM_DDR_LEN)) begin
             // RAM access
-            mem_axi_rdata <= mem_ram[latched_raddr >> 2];
+            mem_axi_rdata <= mem_ram[(latched_raddr - MEM_DDR_BASE) >> 2];
             mem_axi_rvalid <= 1;
             latched_raddr_en = 0;
         end else
-        if (latched_raddr == 32'hE000_002C) begin
+        if (latched_raddr == MEM_UART_SR) begin
             // UART0 SR access
             mem_axi_rdata <= 0;
+            mem_axi_rvalid <= 1;
+            latched_raddr_en = 0;
+        end else
+        if (latched_raddr == MEM_LEDS_BASE) begin
+            // AXI GPIO 0 access
+            mem_axi_rdata <= leds;
             mem_axi_rvalid <= 1;
             latched_raddr_en = 0;
 		end else begin
@@ -337,19 +236,29 @@ module axi4_memory #(
 	task handle_axi_bvalid; begin
 		if (verbose)
 			$display("WR: ADDR=%08x DATA=%08x STRB=%04b", latched_waddr, latched_wdata, latched_wstrb);
-		if (latched_waddr < 256*1024) begin
-			if (latched_wstrb[0]) mem_ocm[latched_waddr >> 2][ 7: 0] <= latched_wdata[ 7: 0];
-			if (latched_wstrb[1]) mem_ocm[latched_waddr >> 2][15: 8] <= latched_wdata[15: 8];
-			if (latched_wstrb[2]) mem_ocm[latched_waddr >> 2][23:16] <= latched_wdata[23:16];
-			if (latched_wstrb[3]) mem_ocm[latched_waddr >> 2][31:24] <= latched_wdata[31:24];
+		if (latched_waddr >= MEM_OCM_BASE && latched_waddr < (MEM_OCM_BASE + MEM_OCM_LEN)) begin
+			if (latched_wstrb[0]) mem_ocm[(latched_waddr - MEM_OCM_BASE) >> 2][ 7: 0] <= latched_wdata[ 7: 0];
+			if (latched_wstrb[1]) mem_ocm[(latched_waddr - MEM_OCM_BASE) >> 2][15: 8] <= latched_wdata[15: 8];
+			if (latched_wstrb[2]) mem_ocm[(latched_waddr - MEM_OCM_BASE) >> 2][23:16] <= latched_wdata[23:16];
+			if (latched_wstrb[3]) mem_ocm[(latched_waddr - MEM_OCM_BASE) >> 2][31:24] <= latched_wdata[31:24];
 		end else
-		if (latched_waddr >= 32'h0010_0000 && latched_waddr < 32'h0020_0000) begin
-            if (latched_wstrb[0]) mem_ram[latched_waddr[23:0] >> 2][ 7: 0] <= latched_wdata[ 7: 0];
-            if (latched_wstrb[1]) mem_ram[latched_waddr[23:0] >> 2][15: 8] <= latched_wdata[15: 8];
-            if (latched_wstrb[2]) mem_ram[latched_waddr[23:0] >> 2][23:16] <= latched_wdata[23:16];
-            if (latched_wstrb[3]) mem_ram[latched_waddr[23:0] >> 2][31:24] <= latched_wdata[31:24];
+		if (latched_waddr >= MEM_DDR_BASE && latched_waddr < (MEM_DDR_BASE + MEM_DDR_LEN)) begin
+            if (latched_wstrb[0])
+                mem_ram[(latched_waddr - MEM_DDR_BASE) >> 2][ 7: 0] <= latched_wdata[ 7: 0];
+            if (latched_wstrb[1])
+                mem_ram[(latched_waddr - MEM_DDR_BASE) >> 2][15: 8] <= latched_wdata[15: 8];
+            if (latched_wstrb[2])
+                mem_ram[(latched_waddr - MEM_DDR_BASE) >> 2][23:16] <= latched_wdata[23:16];
+            if (latched_wstrb[3])
+                mem_ram[(latched_waddr - MEM_DDR_BASE) >> 2][31:24] <= latched_wdata[31:24];
 		end else
-		if (latched_waddr == 32'hE000_0030) begin
+		if (latched_waddr == MEM_LEDS_BASE) begin
+            if (latched_wstrb[0]) leds[ 7: 0] <= latched_wdata[ 7: 0];
+            if (latched_wstrb[1]) leds[15: 8] <= latched_wdata[15: 8];
+            if (latched_wstrb[2]) leds[23:16] <= latched_wdata[23:16];
+            if (latched_wstrb[3]) leds[31:24] <= latched_wdata[31:24];
+		end else
+		if (latched_waddr == MEM_UART_FIFO) begin
 		    // UART0 FIFO access
 		    if (verbose) begin
                 if (32 <= latched_wdata && latched_wdata < 128)
@@ -362,13 +271,6 @@ module axi4_memory #(
                 $fflush();
 `endif
             end
-		end else
-        if (latched_waddr == 32'h0030_0000) begin
-            $display("REPORTED TIMER COUNT: %1d", latched_wdata);
-        end else
-        if (latched_waddr == 32'h0020_0000) begin
-            if (latched_wdata == 123456789)
-                tests_passed = 1;
 		end else begin
 			$display("OUT-OF-BOUNDS MEMORY WRITE TO %08x", latched_waddr);
 			$finish;
@@ -429,370 +331,393 @@ module axi4_memory #(
 	end
 endmodule
 
+module testbench_picorv32 #(
+    parameter AXI_TEST = 0,
+	parameter VERBOSE = 0
+) (
+    input clk, resetn,
+    output trap, tests_passed
+);
+	reg [31:0] irq;
 
-
-
-
-module tb_picorv32_pcpi_fork ();
-
-	reg clk, resetn;
-	reg pcpi_valid;
-	reg [31:0] pcpi_insn;
-	wire pcpi_wr;
-	wire signed [31:0] pcpi_rd;
-	wire pcpi_wait, pcpi_ready;
-	
-	reg child_start, child_stop;
-	wire child_resetn, child_valid, child_wen;
-	wire [4:0] child_rd;
-	wire [31:0] child_pc, child_data;
-	reg child_ready, child_cplt;
-	
-	wire fork_dma_req;
-	reg fork_dma_done;
-	
-	wire parent_cplt;
-	
-	reg [31:0] fork_data;
-	wire [4:0] fork_rs;
-	
 	always @* begin
-		fork_data[31:5] = 'b0;
-		fork_data[4:0] = fork_rs;
-	end
-	
-	always begin
-		child_ready = 0;
-		child_cplt = 0;
-		@(posedge child_resetn);
-		#25;
-		if (child_start) begin
-		  child_ready = 1;
-		  @(posedge child_valid);
-		  child_ready = 0;
-		  @(posedge child_stop);
-		  child_cplt = 1;
-		end
-		@(negedge child_resetn);
+		irq = 0;
+		irq[4] = &uut.picorv32_core.count_cycle[12:0];
+		irq[5] = &uut.picorv32_core.count_cycle[15:0];
 	end
 
-	always begin
-		fork_dma_done = 0;
-		@(posedge fork_dma_req);
-		#50
-		fork_dma_done = 1;
-		@(negedge fork_dma_req);
-	end
-	
-	always
-		#5 clk = !clk;
-	
-	initial begin
-		clk = 0;
-		resetn = 0;
-		pcpi_valid = 0;
-		pcpi_insn = 0;
-		pcpi_insn[6:0] = 7'b0101011;
-		child_start = 0;
-		child_stop = 0;
-		#50;
-		resetn = 1;
-		
-		#25;
-		
-		$display("testing instruction coreid");
-		pcpi_insn[14:12] = 3'b000;
-		@(posedge clk);
-		pcpi_valid = 1;
-		@(posedge pcpi_wait);
-		@(posedge pcpi_ready);
-		$display("pcpi_rd = %.8X", pcpi_rd);
-		if (pcpi_rd != 32'h1234_5678) begin
-		  $display("FAIL");
-		  $finish;
-		end
-		//@(posedge clk);
-		pcpi_valid = 0;
-		
-		#25;
-		
-		$display("testing instruction fork, child disabled");
-		pcpi_insn[14:12] = 3'b100;
-		@(posedge clk);
-		pcpi_valid = 1;
-		@(posedge pcpi_wait);
-		@(posedge pcpi_ready);
-		$display("pcpi_rd = %.8X", pcpi_rd);
-		if (pcpi_rd != -1) begin
-		  $display("FAIL");
-		  $finish;
-		end
-		//@(posedge clk);
-		pcpi_valid = 0;
-		
-		#25;
-		
-		$display("testing instruction fork, child enabled");
-		child_start = 1;
-		pcpi_insn[14:12] = 3'b100;
-		@(posedge clk)
-		pcpi_valid = 1;
-		@(posedge pcpi_wait);
-		@(posedge pcpi_ready);
-		$display("pcpi_rd = %.8X", pcpi_rd);
-		if (pcpi_rd != 0) begin
-		  $display("FAIL");
-          $finish;
-		end
-		//@(posedge clk);
-		child_start = 0;
-		pcpi_valid = 0;
-		
-		#25;
-		
-		$display("testing instruction fork, child already running");
-        pcpi_insn[14:12] = 3'b100;
-        @(posedge clk);
-        pcpi_valid = 1;
-        @(posedge pcpi_wait);
-        @(posedge pcpi_ready);
-        $display("pcpi_rd = %.8X", pcpi_rd);
-        if (pcpi_rd != -1) begin
-            $display("FAIL");
-            $finish;
-        end
-        //@(posedge clk);
-        pcpi_valid = 0;
-        
-        #25;
-		
-		$display("testing instruction join, child running");
-		pcpi_insn[14:12] = 3'b101;
-		@(posedge clk)
-		pcpi_valid = 1;
-		@(posedge pcpi_wait);
-		#100;
-		child_stop = 1;
-		@(posedge pcpi_ready);
-		//@(posedge clk);
-		child_stop = 0;
-		pcpi_valid = 0;
-		
-		#25;
-		
-		$display("testing instruction join, child not running");
-        pcpi_insn[14:12] = 3'b101;
-        @(posedge clk)
-        pcpi_valid = 1;
-        @(posedge pcpi_wait);
-        @(posedge pcpi_ready);
-        //@(posedge clk);
-        pcpi_valid = 0;
-        
-        #25;
-        
-        $display("testing instruction fork, child enabled");
-        child_start = 1;
-        pcpi_insn[14:12] = 3'b100;
-        @(posedge clk)
-        pcpi_valid = 1;
-        @(posedge pcpi_wait);
-        @(posedge pcpi_ready);
-        $display("pcpi_rd = %.8X", pcpi_rd);
-        if (pcpi_rd != 0) begin
-            $display("FAIL");
-            $finish;
-        end
-        //@(posedge clk);
-        child_start = 0;
-        pcpi_valid = 0;
-        
-        #25;
-        
-        $display("testing instruction join, child already completed");
-        pcpi_insn[14:12] = 3'b101;
-        child_stop = 1;
-        #25;
-        @(posedge clk)
-        pcpi_valid = 1;
-        @(posedge pcpi_wait);
-        @(posedge pcpi_ready);
-        //@(posedge clk);
-        child_stop = 0;
-        pcpi_valid = 0;
-        
-        #25;
-        
-        $display("testing instruction exit");
-        pcpi_insn[14:12] = 3'b110;
-        @(posedge clk)
-        pcpi_valid = 1;
-        @(posedge pcpi_wait);
-        @(posedge parent_cplt);
-        #25;
-        resetn = 0;
-        
-        #50 $display("DONE");
-		#25 $finish;
-	end
-	
-	initial begin
-		#10000;
-		$display("TIMEOUT");
-		$finish;
-	end
-	
+	wire        mem_axi_awvalid;
+	wire        mem_axi_awready;
+	wire [31:0] mem_axi_awaddr;
+	wire [ 2:0] mem_axi_awprot;
 
-	picorv32_pcpi_fork dut (
-		.clk(clk), .resetn(resetn),
-		
-		.pcpi_valid(pcpi_valid   ),
-		.pcpi_insn (pcpi_insn    ),
-		.pcpi_rs1  (32'h0000_0000),
-		.pcpi_rs2  (32'h0000_0000),
-		.pcpi_wr   (pcpi_wr      ),
-		.pcpi_rd   (pcpi_rd      ),
-		.pcpi_wait (pcpi_wait    ),
-		.pcpi_ready(pcpi_ready   ),
-		
-		.child_resetn(child_resetn),
-		.child_ready (child_ready ),
-		.child_valid (child_valid ),
-		.child_pc    (child_pc    ),
-		.child_cplt  (child_cplt  ),
-		.child_rd    (child_rd    ),
-		.child_data  (child_data  ),
-		.child_wen   (child_wen   ),
-		
-		.dma_req (fork_dma_req ),
-		.dma_done(fork_dma_done),
-		
-		.parent_cplt(parent_cplt),
-		
-		.cpu_next_pc(32'h0000_0004),
-		.cpu_rd     (32'h0000_0001),
-		.cpu_rs     (fork_rs      ),
-		.cpu_data   (fork_data    )
+	wire        mem_axi_wvalid;
+	wire        mem_axi_wready;
+	wire [31:0] mem_axi_wdata;
+	wire [ 3:0] mem_axi_wstrb;
+
+	wire        mem_axi_bvalid;
+	wire        mem_axi_bready;
+
+	wire        mem_axi_arvalid;
+	wire        mem_axi_arready;
+	wire [31:0] mem_axi_araddr;
+	wire [ 2:0] mem_axi_arprot;
+
+	wire        mem_axi_rvalid;
+	wire        mem_axi_rready;
+	wire [31:0] mem_axi_rdata;
+	
+	wire trace_valid;
+    wire [35:0] trace_data;
+    integer trace_file;
+    
+    initial begin
+        if ($test$plusargs("trace")) begin
+            trace_file = $fopen("picorv32.trace", "w");
+            repeat (10) @(posedge clk);
+            while (!trap) begin
+                @(posedge clk);
+                if (trace_valid)
+                    $fwrite(trace_file, "%x\n", trace_data);
+            end
+            $fclose(trace_file);
+            $display("Finished writing picorv32.trace.");
+        end
+    end
+
+	axi4_memory #(
+		.AXI_TEST (AXI_TEST),
+		.VERBOSE  (VERBOSE)
+	) mem (
+		.clk             (clk             ),
+		.mem_axi_awvalid (mem_axi_awvalid ),
+		.mem_axi_awready (mem_axi_awready ),
+		.mem_axi_awaddr  (mem_axi_awaddr  ),
+		.mem_axi_awprot  (mem_axi_awprot  ),
+
+		.mem_axi_wvalid  (mem_axi_wvalid  ),
+		.mem_axi_wready  (mem_axi_wready  ),
+		.mem_axi_wdata   (mem_axi_wdata   ),
+		.mem_axi_wstrb   (mem_axi_wstrb   ),
+
+		.mem_axi_bvalid  (mem_axi_bvalid  ),
+		.mem_axi_bready  (mem_axi_bready  ),
+
+		.mem_axi_arvalid (mem_axi_arvalid ),
+		.mem_axi_arready (mem_axi_arready ),
+		.mem_axi_araddr  (mem_axi_araddr  ),
+		.mem_axi_arprot  (mem_axi_arprot  ),
+
+		.mem_axi_rvalid  (mem_axi_rvalid  ),
+		.mem_axi_rready  (mem_axi_rready  ),
+		.mem_axi_rdata   (mem_axi_rdata   ),
+
+		.tests_passed    (tests_passed    )
 	);
+
+`ifdef RISCV_FORMAL
+	wire        rvfi_valid;
+	wire [63:0] rvfi_order;
+	wire [31:0] rvfi_insn;
+	wire        rvfi_trap;
+	wire        rvfi_halt;
+	wire        rvfi_intr;
+	wire [4:0]  rvfi_rs1_addr;
+	wire [4:0]  rvfi_rs2_addr;
+	wire [31:0] rvfi_rs1_rdata;
+	wire [31:0] rvfi_rs2_rdata;
+	wire [4:0]  rvfi_rd_addr;
+	wire [31:0] rvfi_rd_wdata;
+	wire [31:0] rvfi_pc_rdata;
+	wire [31:0] rvfi_pc_wdata;
+	wire [31:0] rvfi_mem_addr;
+	wire [3:0]  rvfi_mem_rmask;
+	wire [3:0]  rvfi_mem_wmask;
+	wire [31:0] rvfi_mem_rdata;
+	wire [31:0] rvfi_mem_wdata;
+`endif
+
+	picorv32_axi #(
+`ifndef SYNTH_TEST
+`ifdef SP_TEST
+		.ENABLE_REGS_DUALPORT(0),
+`endif
+`ifdef COMPRESSED_ISA
+		.COMPRESSED_ISA(1),
+`endif
+		.ENABLE_MUL(1),
+		.ENABLE_DIV(1),
+		.ENABLE_IRQ(1),
+		.ENABLE_TRACE(1)
+`endif
+	) uut (
+		.clk            (clk            ),
+		.resetn         (resetn         ),
+		.trap           (trap           ),
+		.mem_axi_awvalid(mem_axi_awvalid),
+		.mem_axi_awready(mem_axi_awready),
+		.mem_axi_awaddr (mem_axi_awaddr ),
+		.mem_axi_awprot (mem_axi_awprot ),
+		.mem_axi_wvalid (mem_axi_wvalid ),
+		.mem_axi_wready (mem_axi_wready ),
+		.mem_axi_wdata  (mem_axi_wdata  ),
+		.mem_axi_wstrb  (mem_axi_wstrb  ),
+		.mem_axi_bvalid (mem_axi_bvalid ),
+		.mem_axi_bready (mem_axi_bready ),
+		.mem_axi_arvalid(mem_axi_arvalid),
+		.mem_axi_arready(mem_axi_arready),
+		.mem_axi_araddr (mem_axi_araddr ),
+		.mem_axi_arprot (mem_axi_arprot ),
+		.mem_axi_rvalid (mem_axi_rvalid ),
+		.mem_axi_rready (mem_axi_rready ),
+		.mem_axi_rdata  (mem_axi_rdata  ),
+		.irq            (irq            ),
+`ifdef RISCV_FORMAL
+		.rvfi_valid     (rvfi_valid     ),
+		.rvfi_order     (rvfi_order     ),
+		.rvfi_insn      (rvfi_insn      ),
+		.rvfi_trap      (rvfi_trap      ),
+		.rvfi_halt      (rvfi_halt      ),
+		.rvfi_intr      (rvfi_intr      ),
+		.rvfi_rs1_addr  (rvfi_rs1_addr  ),
+		.rvfi_rs2_addr  (rvfi_rs2_addr  ),
+		.rvfi_rs1_rdata (rvfi_rs1_rdata ),
+		.rvfi_rs2_rdata (rvfi_rs2_rdata ),
+		.rvfi_rd_addr   (rvfi_rd_addr   ),
+		.rvfi_rd_wdata  (rvfi_rd_wdata  ),
+		.rvfi_pc_rdata  (rvfi_pc_rdata  ),
+		.rvfi_pc_wdata  (rvfi_pc_wdata  ),
+		.rvfi_mem_addr  (rvfi_mem_addr  ),
+		.rvfi_mem_rmask (rvfi_mem_rmask ),
+		.rvfi_mem_wmask (rvfi_mem_wmask ),
+		.rvfi_mem_rdata (rvfi_mem_rdata ),
+		.rvfi_mem_wdata (rvfi_mem_wdata ),
+`endif
+		.trace_valid    (trace_valid    ),
+		.trace_data     (trace_data     )
+	);
+
+`ifdef RISCV_FORMAL
+	picorv32_rvfimon rvfi_monitor (
+		.clock          (clk           ),
+		.reset          (!resetn       ),
+		.rvfi_valid     (rvfi_valid    ),
+		.rvfi_order     (rvfi_order    ),
+		.rvfi_insn      (rvfi_insn     ),
+		.rvfi_trap      (rvfi_trap     ),
+		.rvfi_halt      (rvfi_halt     ),
+		.rvfi_intr      (rvfi_intr     ),
+		.rvfi_rs1_addr  (rvfi_rs1_addr ),
+		.rvfi_rs2_addr  (rvfi_rs2_addr ),
+		.rvfi_rs1_rdata (rvfi_rs1_rdata),
+		.rvfi_rs2_rdata (rvfi_rs2_rdata),
+		.rvfi_rd_addr   (rvfi_rd_addr  ),
+		.rvfi_rd_wdata  (rvfi_rd_wdata ),
+		.rvfi_pc_rdata  (rvfi_pc_rdata ),
+		.rvfi_pc_wdata  (rvfi_pc_wdata ),
+		.rvfi_mem_addr  (rvfi_mem_addr ),
+		.rvfi_mem_rmask (rvfi_mem_rmask),
+		.rvfi_mem_wmask (rvfi_mem_wmask),
+		.rvfi_mem_rdata (rvfi_mem_rdata),
+		.rvfi_mem_wdata (rvfi_mem_wdata)
+	);
+`endif
+
+	reg [1023:0] firmware_file;
+	initial begin
+		if (!$value$plusargs("firmware-picorv32=%s", firmware_file))
+			firmware_file = "../../../firmware/tb-picorv32.hex";
+		$readmemh(firmware_file, mem.mem_ocm);
+	end
+
+	integer cycle_counter;
+	reg trap_q;
+	always @(posedge clk) begin
+        if (!resetn) begin
+            cycle_counter <= 0;
+            trap_q <= 0;
+        end else if (!trap_q) begin
+            cycle_counter <= cycle_counter + 1;
+            if (trap) begin
+`ifndef VERILATOR
+                repeat (10) @(posedge clk);
+`endif
+                $display("PICORV32 TRAPPED after %1d clock cycles", cycle_counter);
+                trap_q <= 1;
+                if (tests_passed) begin
+                    $display("ALL TESTS PASSED.");
+                end else begin
+                    $display("ERROR!");
+                    if ($test$plusargs("noerror"))
+                        $finish;
+                    $stop;
+                 end
+            end
+        end
+    end
 
 endmodule
 
+module testbench_picodev #(
+    parameter AXI_TEST = 0,
+	parameter VERBOSE = 0,
+	parameter CORES_COUNT = 4,
+	parameter [31:0] PRIVATE_MEM_BASE = 32'h0002_0000,
+    parameter [31:0] PRIVATE_MEM_OFFS = 32'h0000_4000,
+    parameter [31:0] PRIVATE_MEM_LEN = 32'h0001_4000
+) (
+    input clk, resetn,
+    output trap, tests_passed
+);
+    reg [31:0] irq;
 
-
-module tb_picorv32_dmm ();
-	localparam int CORES_COUNT = 4;
-	
-	reg clk, resetn;
-	
-	reg  [CORES_COUNT-1:0] dmm_request;
-	wire [CORES_COUNT-1:0] dmm_done;
-	wire dmm_done_any = |dmm_done;
-	
-	wire        mem_valid;
-	reg         mem_ready;
-	wire [31:0] mem_addr;
-	wire [31:0] mem_wdata;
-	wire [ 3:0] mem_wstrb;
-	reg  [31:0] mem_rdata;
-	reg         mem_wait, mem_wait_q;
-	
-	initial begin
-		clk = 0;
-		resetn = 0;
-		dmm_request = 0;
-		
-		#10us;
-		$display("TIMEOUT");
-		$finish;
-	end
-	
-	always #5ns clk = ~clk;
-	
 	always @* begin
-		reg mem_wait, mem_wait_done;
-		
-		mem_ready = 0;
-		mem_rdata = 'bx;
-		mem_wait = 0;
-		mem_wait_done = 0;
-		
-		//@(posedge resetn);
-		
-		while (resetn) begin
-			@(posedge clk);
-			if (mem_valid) begin
-				mem_rdata = {16'h1234, mem_addr[15:0]};
-				if (!mem_wait_done) begin
-					if (!mem_wait) begin
-						mem_wait = 1;
-						//@(posedge clk);
-					end else begin
-						mem_wait = 0;
-						mem_wait_done = 1;
-						//@(posedge clk);
-					end
-				end else begin
-					mem_ready = 1;
-				end
-			end else begin
-				mem_ready = 0;
-				mem_rdata = 'bx;
-				mem_wait = 0;
-				mem_wait_done = 0;
-			end
-		end
+		irq = 0;
+		irq[4] = &uut.device_single.device.GEN_CORE[0].core.count_cycle[12:0];
+		irq[5] = &uut.device_single.device.GEN_CORE[0].core.count_cycle[15:0];
 	end
 
-	picorv32_dmm #(
-		.CORES_COUNT      (CORES_COUNT),
-		.PRIVATE_MEM_START(0          ),
-		.PRIVATE_MEM_LEN  (16         )
-	) dut (
-		.clk(clk), .resetn(resetn),
-		.dmm_request(dmm_request),
-		.dmm_done   (dmm_done   ),
-		.mem_valid(mem_valid),
-		.mem_ready(mem_ready),
-		.mem_addr (mem_addr ),
-		.mem_wdata(mem_wdata),
-		.mem_wstrb(mem_wstrb),
-		.mem_rdata(mem_rdata)
+    wire        mem_axi_awvalid;
+	wire        mem_axi_awready;
+	wire [31:0] mem_axi_awaddr;
+	wire [ 2:0] mem_axi_awprot;
+
+	wire        mem_axi_wvalid;
+	wire        mem_axi_wready;
+	wire [31:0] mem_axi_wdata;
+	wire [ 3:0] mem_axi_wstrb;
+
+	wire        mem_axi_bvalid;
+	wire        mem_axi_bready;
+
+	wire        mem_axi_arvalid;
+	wire        mem_axi_arready;
+	wire [31:0] mem_axi_araddr;
+	wire [ 2:0] mem_axi_arprot;
+
+	wire        mem_axi_rvalid;
+	wire        mem_axi_rready;
+	wire [31:0] mem_axi_rdata;
+	
+	wire trace_valid[CORES_COUNT-1:0];
+    wire [35:0] trace_data[CORES_COUNT-1:0];
+    integer trace_file[CORES_COUNT-1:0];
+    
+    genvar i;
+    generate for (i = 0; i < CORES_COUNT; i = i + 1) begin
+        initial begin
+            string trace_fnm;
+            if ($test$plusargs("trace")) begin
+                trace_fnm = $sformatf("picodev_%1d.trace", i);
+                trace_file[i] = $fopen(trace_fnm, "w");
+                repeat (10) @(posedge clk);
+                while (!trap) begin
+                    @(posedge clk);
+                    if (trace_valid[i])
+                        $fwrite(trace_file[i], "%x\n", trace_data[i]);
+                end
+                $fclose(trace_file[i]);
+                $display("Finished writing %s.", trace_fnm);
+            end        
+        end
+    end endgenerate
+
+    axi4_memory #(
+		.AXI_TEST (AXI_TEST),
+		.VERBOSE  (VERBOSE)
+	) mem (
+		.clk             (clk             ),
+		.mem_axi_awvalid (mem_axi_awvalid ),
+		.mem_axi_awready (mem_axi_awready ),
+		.mem_axi_awaddr  (mem_axi_awaddr  ),
+		.mem_axi_awprot  (mem_axi_awprot  ),
+
+		.mem_axi_wvalid  (mem_axi_wvalid  ),
+		.mem_axi_wready  (mem_axi_wready  ),
+		.mem_axi_wdata   (mem_axi_wdata   ),
+		.mem_axi_wstrb   (mem_axi_wstrb   ),
+
+		.mem_axi_bvalid  (mem_axi_bvalid  ),
+		.mem_axi_bready  (mem_axi_bready  ),
+
+		.mem_axi_arvalid (mem_axi_arvalid ),
+		.mem_axi_arready (mem_axi_arready ),
+		.mem_axi_araddr  (mem_axi_araddr  ),
+		.mem_axi_arprot  (mem_axi_arprot  ),
+
+		.mem_axi_rvalid  (mem_axi_rvalid  ),
+		.mem_axi_rready  (mem_axi_rready  ),
+		.mem_axi_rdata   (mem_axi_rdata   ),
+
+		.tests_passed    (tests_passed    )
 	);
 	
+    picodevice_single_axi #(
+		.ENABLE_TRACE    (1            ),
+		.CORES_COUNT     (CORES_COUNT  ),
+		.PRIVATE_MEM_BASE(32'h0002_0000),
+        .PRIVATE_MEM_OFFS(32'h0000_4000),
+        .PRIVATE_MEM_LEN (32'h0000_4000)
+	) uut (
+		.clk            (clk            ),
+		.resetn         (resetn         ),
+		.trap           (trap           ),
+		.mem_axi_awvalid(mem_axi_awvalid),
+		.mem_axi_awready(mem_axi_awready),
+		.mem_axi_awaddr (mem_axi_awaddr ),
+		.mem_axi_awprot (mem_axi_awprot ),
+		.mem_axi_wvalid (mem_axi_wvalid ),
+		.mem_axi_wready (mem_axi_wready ),
+		.mem_axi_wdata  (mem_axi_wdata  ),
+		.mem_axi_wstrb  (mem_axi_wstrb  ),
+		.mem_axi_bvalid (mem_axi_bvalid ),
+		.mem_axi_bready (mem_axi_bready ),
+		.mem_axi_arvalid(mem_axi_arvalid),
+		.mem_axi_arready(mem_axi_arready),
+		.mem_axi_araddr (mem_axi_araddr ),
+		.mem_axi_arprot (mem_axi_arprot ),
+		.mem_axi_rvalid (mem_axi_rvalid ),
+		.mem_axi_rready (mem_axi_rready ),
+		.mem_axi_rdata  (mem_axi_rdata  ),
+		
+		.irq            (irq            ),
+		.eoi            (               ),
+		.trace_valid    (trace_valid    ),
+		.trace_data     (trace_data     )
+	);
 	
-	initial begin
-		$monitor("TIME = %g DMM_REQ = %b DMM_DONE = %b", $time, dmm_request, dmm_done);
-		#100ns;
-		resetn = 1;
-		#50ns;
-		
-		$display("TEST 1");
-		for (int i = 0; i < CORES_COUNT; i++) begin
-			dmm_request[i] = 1;
-			@(posedge dmm_done[i]);
-			#50ns dmm_request[i] = 0;
-			#50ns;
-		end
-		
-		$display("TEST 2");
-		for (int i = 0; i < CORES_COUNT; i++) begin
-			dmm_request[i] = 1;
-			for (int i = 0; i < 5; i++)
-				@(posedge clk);
-			dmm_request[i] = 0;
-			@(posedge dmm_done[i]);
-			#50ns;
-		end
-		
-		$display("TEST 3");
-		dmm_request = {CORES_COUNT{1'b1}};
-		@(posedge &dmm_done);
-		#50ns;
-		dmm_request = 0;
-		
-		#100;
-		$display("TESTS DONE");
-		$finish;
-	end
-
+	reg [1023:0] firmware_file;
+    initial begin
+        if (!$value$plusargs("firmware-picodev=%s", firmware_file))
+            firmware_file = "../../../firmware/tb-picodev.hex";
+        $readmemh(firmware_file, mem.mem_ocm);
+    end
+    
+    integer cycle_counter;
+    reg trap_q;
+    always @(posedge clk) begin
+        if (!resetn) begin
+            cycle_counter <= 0;
+            trap_q <= 0;
+        end else if (!trap_q) begin
+            cycle_counter <= cycle_counter + 1;
+            if (trap) begin
+`ifndef VERILATOR
+                repeat (10) @(posedge clk);
+`endif
+                $display("PICODEV TRAPPED after %1d clock cycles", cycle_counter);
+                trap_q <= 1;
+                if (tests_passed) begin
+                    $display("ALL TESTS PASSED.");
+                end else begin
+                    $display("ERROR!");
+                    if ($test$plusargs("noerror"))
+                        $finish;
+                    $stop;
+                end
+            end
+        end
+    end
+        
 endmodule
